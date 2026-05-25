@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Validates document ID string parameter to block characters or size exhaust attacks
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- ENTITY VALIDATORS ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email'])
+        && data.uid is string && data.uid.size() <= 128
+        && data.email is string && data.email.size() <= 256
+        && (!data.keys().contains('activeTheme') || data.activeTheme is string && data.activeTheme.size() <= 128);
+    }
+
+    function isValidCharacter(data) {
+      return data.keys().hasAll(['id', 'name', 'role'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 128
+        && data.role is string && data.role.size() <= 256
+        && (!data.keys().contains('status') || data.status is string && data.status.size() <= 128)
+        && (!data.keys().contains('manifesto') || data.manifesto is string && data.manifesto.size() <= 65536)
+        && (!data.keys().contains('avatarUrl') || data.avatarUrl is string && data.avatarUrl.size() <= 2048);
+    }
+
+    function isValidScriptSection(data) {
+      return data.keys().hasAll(['id', 'title', 'speaker', 'content'])
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 256
+        && data.speaker is string && data.speaker.size() <= 128
+        && data.content is string && data.content.size() <= 65536
+        && (!data.keys().contains('voice') || data.voice is string && data.voice.size() <= 128)
+        && (!data.keys().contains('audioData') || data.audioData is string && data.audioData.size() <= 20000000)
+        && (!data.keys().contains('mimeType') || data.mimeType is string && data.mimeType.size() <= 128)
+        && (!data.keys().contains('animVideoUrl') || data.animVideoUrl is string && data.animVideoUrl.size() <= 2048)
+        && (!data.keys().contains('duration') || data.duration is number)
+        && (!data.keys().contains('isVoiceGenerating') || data.isVoiceGenerating is bool)
+        && (!data.keys().contains('isAnimateGenerating') || data.isAnimateGenerating is bool);
+    }
+
+    function isValidChatHistory(data) {
+      return data.keys().hasAll(['id', 'role', 'content', 'timestamp'])
+        && data.id is string && data.id.size() <= 128
+        && data.role is string && (data.role == 'user' || data.role == 'assistant')
+        && data.content is string && data.content.size() <= 65536
+        && data.timestamp is string && data.timestamp.size() <= 128;
+    }
+
+    // --- COGNITIVE ROUTING & RULE MATCHING ---
+
+    // Primary User Settings & Configuration
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidUserProfile(incoming()) 
+                     && incoming().uid == existing().uid; // Immutable user ID field matching
+      allow delete, list: if false; // Protects PII data leaks from unauthorized scanning
+    }
+
+    // User Characters / Council Synapses
+    match /users/{userId}/characters/{characterId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(characterId) && isValidCharacter(incoming());
+      allow update: if isOwner(userId) && isValidId(characterId) && isValidCharacter(incoming())
+                     && incoming().id == existing().id; // Enforce immutable document ID parameters
+      allow delete: if isOwner(userId) && isValidId(characterId);
+    }
+
+    // Scripts and Story boards
+    match /users/{userId}/scripts/{scriptId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(scriptId) && isValidScriptSection(incoming());
+      allow update: if isOwner(userId) && isValidId(scriptId) && isValidScriptSection(incoming())
+                     && incoming().id == existing().id; // Enforce immutable document ID parameters
+      allow delete: if isOwner(userId) && isValidId(scriptId);
+    }
+
+    // Cognitive Core Chat history
+    match /users/{userId}/chatHistory/{messageId} {
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(messageId) && isValidChatHistory(incoming());
+      allow update: if isOwner(userId) && isValidId(messageId) && isValidChatHistory(incoming())
+                     && incoming().id == existing().id; // Immutable historic message logs
+      allow delete: if isOwner(userId) && isValidId(messageId);
+    }
+  }
+}

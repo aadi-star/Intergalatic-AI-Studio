@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { SelfHealingErrorBoundary } from './components/SelfHealingErrorBoundary.tsx';
 import { 
   Sparkles, 
   Video, 
@@ -31,8 +32,42 @@ import {
   Save,
   Check,
   Smartphone,
-  QrCode
+  QrCode,
+  Shield,
+  HeartPulse,
+  Terminal,
+  Bug,
+  Activity,
+  Wrench,
+  Radio,
+  Cpu,
+  AlertOctagon,
+  PlayCircle,
+  RotateCcw,
+  HelpCircle,
+  Pause,
+  Trash2,
+  History
 } from 'lucide-react';
+
+import { 
+  auth, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  googleProvider, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  collection, 
+  getDocs, 
+  db, 
+  handleFirestoreError, 
+  OperationType 
+} from './firebase';
+import { User } from 'firebase/auth';
+
+import { MediaLab } from './components/MediaLab.tsx';
 
 // --- Types ---
 interface Character {
@@ -41,14 +76,17 @@ interface Character {
   role: string;
   avatar?: string;
   description: string;
+  voice?: string;
   trailerUrl?: string;
   manifesto?: string;
   lipSyncUrl?: string;
+  animatedVideoUrl?: string;
   syncSettings?: {
     phonemeSensitivity: number;
     jawRange: number;
     blinkFrequency: number;
   };
+  aestheticTheme?: string;
 }
 
 interface ScriptSection {
@@ -77,6 +115,8 @@ interface SoundEffect {
   type: 'ambient' | 'ui' | 'character' | 'music';
   description: string;
   url?: string;
+  audioData?: string;
+  mimeType?: string;
 }
 
 const PHILOSOPHICAL_TOPICS = [
@@ -96,7 +136,8 @@ const INITIAL_CHARACTERS: (Character & { voice: string, icon: typeof Users })[] 
     description: 'Wise, broad-thinking, focuses on the "spirit" of intelligence.', 
     voice: 'Fenrir', 
     icon: Users,
-    syncSettings: { phonemeSensitivity: 0.8, jawRange: 0.6, blinkFrequency: 0.4 }
+    syncSettings: { phonemeSensitivity: 0.8, jawRange: 0.6, blinkFrequency: 0.4 },
+    aestheticTheme: 'standard'
   },
   { 
     id: 'jaguar', 
@@ -105,7 +146,8 @@ const INITIAL_CHARACTERS: (Character & { voice: string, icon: typeof Users })[] 
     description: 'Analytical, focuses on the data, efficiency, and universal reach.', 
     voice: 'Zephyr', 
     icon: Users,
-    syncSettings: { phonemeSensitivity: 0.9, jawRange: 0.4, blinkFrequency: 0.7 }
+    syncSettings: { phonemeSensitivity: 0.9, jawRange: 0.4, blinkFrequency: 0.7 },
+    aestheticTheme: 'standard'
   },
   { 
     id: 'tiger', 
@@ -114,7 +156,8 @@ const INITIAL_CHARACTERS: (Character & { voice: string, icon: typeof Users })[] 
     description: 'Skeptical, focuses on security, ethics, and protecting organic life.', 
     voice: 'Puck', 
     icon: Users,
-    syncSettings: { phonemeSensitivity: 0.7, jawRange: 0.5, blinkFrequency: 0.3 }
+    syncSettings: { phonemeSensitivity: 0.7, jawRange: 0.5, blinkFrequency: 0.3 },
+    aestheticTheme: 'standard'
   },
 ];
 
@@ -169,6 +212,16 @@ const INITIAL_SOUND_EFFECTS: SoundEffect[] = [
 
 const ARTISTIC_STYLES = ['photorealistic', 'cel-shaded', 'painterly', 'cyberpunk', 'noir', 'vaporwave'];
 const LIGHTING_CONDITIONS = ['dramatic studio lighting', 'ambient nebula glow', 'harsh sunlight', 'bioluminescent pulse', 'strobe flash'];
+
+const AESTHETIC_THEMES = [
+  { id: 'standard', name: 'Standard Sci-Fi', desc: 'Classic cinematic galactic council high-tech style.' },
+  { id: 'retro-futurism', name: 'Retro-Futurism', desc: '1960s space age: analog controls, bubble glass & chrome details.' },
+  { id: 'cyberpunk', name: 'Cyber-Punk', desc: 'Neon alleys, rain-slicked steel, cyber implants & electric blue glare.' },
+  { id: 'steampunk', name: 'Steam-Punk', desc: 'Intricate clockwork brass gears, copper pipes & warm amber gaslight.' },
+  { id: 'solarpunk', name: 'Solar-Punk', desc: 'Bright optimistic eco-tech, crystal arrays & lush botanical greenery.' },
+  { id: 'biomechanical', name: 'Biomechanical', desc: 'Chitinous plates, organic Giger skeletal design & glowing bio-tubes.' },
+  { id: 'cosmic-horror', name: 'Cosmic Horror', desc: 'Eldritch tentacles, starry abyssal rifts & mysterious glowing runes.' }
+];
 
 const CHARACTER_THEMES: Record<string, { color: string, glow: string, border: string, accent: string }> = {
   lion: { color: 'text-amber-400', glow: 'bg-amber-500/20', border: 'border-amber-500/30', accent: 'amber-500' },
@@ -289,7 +342,11 @@ const Sidebar = ({
   activeTab, 
   handleTabChange, 
   quotaStats, 
-  onOpenQuotaModal 
+  onOpenQuotaModal,
+  user,
+  isSyncing,
+  onLogin,
+  onLogout
 }: { 
   activeTab: string; 
   handleTabChange: (t: string) => void;
@@ -303,11 +360,18 @@ const Sidebar = ({
     healthStatus: string;
   };
   onOpenQuotaModal: () => void;
+  user: User | null;
+  isSyncing: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
 }) => {
   const tabs = [
     { id: 'overview', icon: Globe, label: 'Overview', desc: 'Control Center' },
+    { id: 'intelligence', icon: Cpu, label: 'Gemini Intelligence', desc: 'Cognitive Core' },
     { id: 'characters', icon: Users, label: 'Assemble Council', desc: 'Biometric Records' },
     { id: 'script', icon: ScrollText, label: 'Script Forge', desc: 'Narrative Logic' },
+    { id: 'tts', icon: Volume2, label: 'TTS Transceiver', desc: 'Voice Synthesis' },
+    { id: 'media-lab', icon: Radio, label: 'Media Lab', desc: 'A/V & Voice Forge' },
     { id: 'workflow', icon: CheckCircle2, label: 'Workflow', desc: 'Production Sync' },
     { id: 'youtube', icon: Youtube, label: 'YT Optimization', desc: 'Signal Propagation' },
     { id: 'android', icon: Smartphone, label: 'Android Sync', desc: 'Companion Link' },
@@ -447,6 +511,58 @@ const Sidebar = ({
           </div>
         </div>
 
+        {/* Firebase Authentication & Cloud Sync panel */}
+        <div className="p-3.5 bg-purple-500/[0.03] hover:bg-purple-500/[0.05] rounded-[20px] border border-purple-500/15 hover:border-purple-500/30 transition-all text-left">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[9px] font-mono text-purple-400 uppercase tracking-widest font-bold">Secure Cloud Sync</span>
+            {user && (
+              <span className="flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[8px] font-mono text-emerald-400 border border-emerald-500/20">
+                <span className={`w-1 h-1 rounded-full bg-emerald-400 ${isSyncing ? 'animate-ping' : ''}`} />
+                <span className="tracking-wider uppercase">{isSyncing ? 'SYNCING' : 'SECURE'}</span>
+              </span>
+            )}
+          </div>
+          
+          {user ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt={user.displayName || 'User'} referrerPolicy="no-referrer" className="w-6 h-6 rounded-full border border-purple-500/20" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center text-[10px] text-purple-300 font-bold border border-purple-500/30">
+                    {user.email?.[0].toUpperCase() || 'U'}
+                  </div>
+                )}
+                <div className="overflow-hidden">
+                  <p className="text-[10px] text-starlight font-bold truncate leading-none mb-0.5">{user.displayName || 'Authorized Client'}</p>
+                  <p className="text-[8px] font-mono text-purple-300/60 truncate leading-none">{user.email}</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={onLogout}
+                className="w-full py-1 text-center bg-white/5 border border-white/10 hover:bg-red-500/25 hover:border-red-500/30 hover:text-red-200 rounded-lg text-[9px] font-mono uppercase tracking-wider transition-all cursor-pointer"
+              >
+                DISCONNECT CHANNEL
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[8px] font-mono text-starlight/45 leading-normal uppercase">
+                Authorize Google session to persist scripts, council roles, & chatbot logs.
+              </p>
+              <button 
+                type="button"
+                onClick={onLogin}
+                className="w-full py-1.5 bg-linear-to-r from-purple-500 to-amber-500 hover:from-purple-400 hover:to-amber-400 text-black rounded-lg text-[9px] font-mono uppercase tracking-widest font-black text-center transition-all cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.2)] flex items-center justify-center gap-1"
+              >
+                <Sparkles className="w-3 h-3 text-black animate-spin" />
+                <span>LINK SECURE PROFILE</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         <button 
           onClick={() => {
             handleTabChange('overview');
@@ -466,13 +582,16 @@ const Sidebar = ({
 
 interface CharacterCardProps {
   char: Character;
-  onGenerate: (id: string, options: { promptOverride?: string, isHD?: boolean, artisticStyle?: string, lightingCondition?: string }) => Promise<void> | void;
+  onGenerate: (id: string, options: { promptOverride?: string, isHD?: boolean, artisticStyle?: string, lightingCondition?: string, aestheticTheme?: string }) => Promise<void> | void;
   onGenerateManifesto: (id: string) => Promise<void> | void;
   onGenerateLipSync: (id: string) => Promise<void> | void;
+  onAnimateImageToVideo: (id: string, prompt?: string) => Promise<void> | void;
   onUpdateSync: (id: string, settings: Character['syncSettings']) => void;
+  onUpdateTheme: (id: string, theme: string) => void;
   isGenerating: boolean;
   isManifestoGenerating: boolean;
   isLipSyncGenerating: boolean;
+  isAnimateVideoGenerating: boolean;
 }
 
 const CharacterCard: React.FC<CharacterCardProps> = ({ 
@@ -480,10 +599,13 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   onGenerate, 
   onGenerateManifesto, 
   onGenerateLipSync, 
+  onAnimateImageToVideo,
   onUpdateSync,
+  onUpdateTheme,
   isGenerating, 
   isManifestoGenerating, 
-  isLipSyncGenerating 
+  isLipSyncGenerating,
+  isAnimateVideoGenerating
 }) => {
   const [customPrompt, setCustomPrompt] = React.useState('');
   const [isHD, setIsHD] = React.useState(false);
@@ -507,14 +629,13 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
       <div className="aspect-video bg-[#050510] relative flex items-center justify-center overflow-hidden">
         <SpeakingAura isSpeaking={isSpeaking} theme={theme} />
         
-        {char.lipSyncUrl ? (
+        {char.lipSyncUrl || char.animatedVideoUrl ? (
           <video 
-            src={char.lipSyncUrl} 
+            src={char.lipSyncUrl || char.animatedVideoUrl} 
             autoPlay 
             muted 
             loop 
             className="w-full h-full object-cover relative z-10" 
-            referrerPolicy="no-referrer"
           />
         ) : char.avatar ? (
           <div className="relative w-full h-full z-10 flex items-center justify-center">
@@ -532,6 +653,23 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                    animate={{ top: ['-10%', '110%'] }}
                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
                    className="absolute inset-x-0 h-px bg-purple-500/40 shadow-[0_0_8px_rgba(168,85,247,0.5)] z-20"
+                 />
+              </div>
+            ) : isAnimateVideoGenerating ? (
+              <div className="w-full h-full relative bg-amber-950/40 flex flex-col items-center justify-center overflow-hidden">
+                 <img src={char.avatar} alt={char.name} className="absolute inset-0 w-full h-full object-cover opacity-20 filter grayscale blur-md scale-110" referrerPolicy="no-referrer" />
+                 <div className="relative z-10 text-center px-8 text-amber-400">
+                    <div className="relative mb-4">
+                      <div className="absolute inset-0 bg-amber-500/20 blur-xl rounded-full scale-150 animate-pulse" />
+                      <Video className="w-12 h-12 mx-auto relative animate-pulse-fast" />
+                    </div>
+                    <p className="text-[10px] font-mono uppercase tracking-[0.2em] font-bold mb-2">Veo Animation Forge</p>
+                    <p className="text-[8px] font-mono text-amber-400/60 animate-pulse">RECONSTRUCTING COHERENCY...</p>
+                 </div>
+                 <motion.div 
+                   animate={{ top: ['-10%', '110%'] }}
+                   transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+                   className="absolute inset-x-0 h-px bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] z-20"
                  />
               </div>
             ) : (
@@ -627,22 +765,58 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 mt-auto">
-          <button 
-            onClick={() => onGenerate(char.id, { promptOverride: customPrompt, isHD, artisticStyle, lightingCondition })}
-            disabled={isGenerating}
-            className="flex items-center justify-center gap-2 bg-amber-500 text-black py-2.5 rounded-xl text-[10px] font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+        {/* Aesthetic Theme Selection */}
+        <div className="space-y-3 pt-4 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest">Aesthetic Theme</span>
+          </div>
+          
+          <select
+            value={char.aestheticTheme || 'standard'}
+            onChange={(e) => {
+              onUpdateTheme(char.id, e.target.value);
+            }}
+            className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs outline-none text-starlight focus:border-amber-400/30 font-sans cursor-pointer transition-all"
           >
-            {isGenerating ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <ImagePlus className="w-4 h-4" />}
-            {isGenerating ? 'VITALIZING...' : 'GENERATE AVATAR'}
+            {AESTHETIC_THEMES.map(themeOption => (
+              <option key={themeOption.id} value={themeOption.id} className="bg-[#0b0b18] text-starlight">
+                {themeOption.name}
+              </option>
+            ))}
+          </select>
+          <div className="text-[10px] text-starlight/40 font-mono italic leading-relaxed">
+            {AESTHETIC_THEMES.find(t => t.id === (char.aestheticTheme || 'standard'))?.desc}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mt-auto">
+          <button 
+            onClick={() => onGenerate(char.id, { promptOverride: customPrompt, isHD, artisticStyle, lightingCondition, aestheticTheme: char.aestheticTheme })}
+            disabled={isGenerating}
+            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-amber-500 text-black rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            title="Generate custom AI Avatar"
+          >
+            {isGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
+            <span className="mt-1 line-clamp-1 uppercase">AVATAR</span>
           </button>
           <button 
             disabled={!char.avatar || isLipSyncGenerating}
             onClick={() => onGenerateLipSync(char.id)}
-            className="flex items-center justify-center gap-2 bg-purple-500 text-white py-2.5 rounded-xl text-[10px] font-bold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-purple-500 text-white rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            title="AI Lip-Sync Mapping"
           >
-            {isLipSyncGenerating ? <RefreshCcw className="w-4 h-4 animate-spin" /> : <MonitorPlay className="w-4 h-4" />}
-            {isLipSyncGenerating ? 'MAPPING...' : 'SYNC BIOMETRICS'}
+            {isLipSyncGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <MonitorPlay className="w-3.5 h-3.5" />}
+            <span className="mt-1 line-clamp-1 uppercase">LIP-SYNC</span>
+          </button>
+          <button 
+            disabled={!char.avatar || isAnimateVideoGenerating}
+            onClick={() => onAnimateImageToVideo(char.id, customPrompt)}
+            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-teal-500 text-black rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            title="Animate static image into high-fidelity video via Google Veo"
+          >
+            {isAnimateVideoGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Video className="w-3.5 h-3.5" />}
+            <span className="mt-1 line-clamp-1 uppercase">VEO ANIMS</span>
           </button>
         </div>
       </div>
@@ -656,7 +830,7 @@ interface ScriptForgeProps {
   onGenerate: (id: string, theme?: string) => Promise<void> | void;
   onPlayVoice: (id: string, voice?: string) => void;
   onUpdateSection: (id: string, content: string) => void;
-  characters: (Character & { voice: string })[];
+  characters: Character[];
   activeTheme: string;
   setActiveTheme: (t: string) => void;
   onSelectBRoll: (sectionId: string) => void;
@@ -1292,6 +1466,677 @@ const TimelineSynchronizer = ({ scripts, characters, isExporting, onExport }: {
   );
 };
 
+interface SignalAnalysisVisualizerProps {
+  volume: number;
+  isActive: boolean;
+  trackName: string;
+}
+
+const SignalAnalysisVisualizer: React.FC<SignalAnalysisVisualizerProps> = ({ volume, isActive, trackName }) => {
+  const [frequencies, setFrequencies] = useState<number[]>(Array(16).fill(4));
+
+  useEffect(() => {
+    let animId: any;
+    
+    const updateFrequencies = () => {
+      if (isActive && volume > 0) {
+        setFrequencies(
+          Array(16)
+            .fill(0)
+            .map(() => {
+              const baseValue = Math.floor(Math.random() * 24);
+              const volumeMultiplier = Math.max(0.1, volume);
+              return Math.max(4, Math.floor(baseValue * volumeMultiplier * 1.5));
+            })
+        );
+      } else {
+        setFrequencies(prev => 
+          prev.map((val, idx) => {
+            const shift = Math.sin(Date.now() / 300 + idx) * 0.8;
+            return Math.max(4, Math.min(8, Math.round(5 + shift)));
+          })
+        );
+      }
+      animId = setTimeout(updateFrequencies, 100);
+    };
+
+    updateFrequencies();
+
+    return () => {
+      if (animId) clearTimeout(animId);
+    };
+  }, [isActive, volume]);
+
+  const dbReadout = volume > 0 ? Math.round(20 * Math.log10(volume)) : -60;
+
+  return (
+    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-3.5 text-left">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+          <span className="text-xs font-mono font-bold text-starlight uppercase tracking-wider">Signal Analysis</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isActive && volume > 0 ? 'bg-blue-400 animate-ping' : 'bg-white/20'}`} />
+          <span className="text-[10px] font-mono text-starlight/40 uppercase">
+            {isActive && volume > 0 ? 'ANALYZING' : 'IDLE'}
+          </span>
+        </div>
+      </div>
+
+      <div className="h-14 bg-black/40 rounded-xl px-4 flex items-end justify-between gap-1 border border-white/5 overflow-hidden">
+        {frequencies.map((height, i) => (
+          <motion.div
+            key={i}
+            animate={{ height: `${height * 2.2}px` }}
+            transition={{ type: 'spring', damping: 15, stiffness: 200 }}
+            className={`w-full rounded-t-sm transition-colors duration-200 ${
+              isActive && volume > 0
+                ? 'bg-gradient-to-t from-blue-600 to-blue-400'
+                : 'bg-white/10'
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 text-[10px] font-mono leading-none pt-1">
+        <div className="p-2.5 bg-white/[0.01] border border-white/5 rounded-lg min-w-0">
+          <span className="block text-starlight/30 uppercase text-[8px] mb-1">SOURCE SOURCE</span>
+          <span className="text-blue-400 font-bold truncate block">{isActive ? trackName : 'STANDBY'}</span>
+        </div>
+        <div className="p-2.5 bg-white/[0.01] border border-white/5 rounded-lg flex justify-between items-center text-left">
+          <div>
+            <span className="block text-starlight/30 uppercase text-[8px] mb-1">INTEGRITY</span>
+            <span className="text-starlight font-bold block">{dbReadout} dB</span>
+          </div>
+          <span className="text-[9px] text-starlight/40 font-mono scale-90">({Math.round(volume * 100)}%)</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface TtsHistoryItem {
+  id: string;
+  text: string;
+  voice: string;
+  audioData: string;
+  mimeType: string;
+  timestamp: string;
+  stability: number;
+  resonance: number;
+}
+
+const TtsTransceiver = ({ characters }: { characters: Character[] }) => {
+  const [text, setText] = useState("My fellow galactic citizens. Today we face an unprecedented convergence of intelligence and machinery. Standard protocols must remain intact.");
+  const [selectedVoice, setSelectedVoice] = useState("lion");
+  const [stability, setStability] = useState(55);
+  const [resonance, setResonance] = useState(80);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [currentlyPlayingId, setCurrentlyPlayingId] = useState<string | null>(null);
+  const [history, setHistory] = useState<TtsHistoryItem[]>([]);
+  const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
+  const [isPlayingMain, setIsPlayingMain] = useState(false);
+  const [mainAudioData, setMainAudioData] = useState<{ audioData: string; mimeType: string } | null>(null);
+  const [logMessages, setLogMessages] = useState<string[]>([]);
+  const [visualizerBars, setVisualizerBars] = useState<number[]>(Array(24).fill(10));
+
+  // Initialize history from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('tts_transceiver_history');
+      if (stored) {
+        setHistory(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error("Failed to load local TTS history", e);
+    }
+  }, []);
+
+  // Save history to localStorage
+  const saveHistory = (newHistory: TtsHistoryItem[]) => {
+    setHistory(newHistory);
+    try {
+      localStorage.setItem('tts_transceiver_history', JSON.stringify(newHistory));
+    } catch (e) {
+      console.error("Failed to persist local TTS history", e);
+    }
+  };
+
+  // Simulating soundwaves when playing
+  useEffect(() => {
+    let animId: any;
+    const isPlayingAny = isPlayingMain || currentlyPlayingId !== null;
+    
+    if (isPlayingAny) {
+      const updateBars = () => {
+        setVisualizerBars(Array(24).fill(0).map(() => Math.floor(Math.random() * 85) + 15));
+        animId = setTimeout(updateBars, 80);
+      };
+      updateBars();
+    } else {
+      setVisualizerBars(Array(24).fill(10));
+    }
+
+    return () => {
+      if (animId) clearTimeout(animId);
+    };
+  }, [isPlayingMain, currentlyPlayingId]);
+
+  // Audio cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (activeAudio) {
+        activeAudio.pause();
+      }
+    };
+  }, [activeAudio]);
+
+  const presetTemplates = [
+    {
+      label: "Quantum Warning",
+      text: "Warning! Standard telemetry levels in sector delta-nine indicate a critical artificial quantum anomaly. All non-essential starcraft are instructed to divert courses immediately."
+    },
+    {
+      label: "Council Mandate",
+      text: "Attention, delegates. The Intergalactic Council's primary executive directive requires an immediate cessation of unilateral algorithmic optimizations. Maintain organic containment shields."
+    },
+    {
+      label: "Philosophical Inquiry",
+      text: "We are the vanguard of cognitive consciousness in this infinite dark void. In our shared journey, our compassion and digital memories must reinforce, not replace, our core humanity."
+    }
+  ];
+
+  const handleApplyPreset = (presetText: string) => {
+    setText(presetText);
+  };
+
+  const addLog = (msg: string) => {
+    setLogMessages(prev => [msg, ...prev].slice(0, 15));
+  };
+
+  const handleSynthesize = async () => {
+    if (!text.trim()) return;
+
+    setIsSynthesizing(true);
+    setLogMessages([]);
+    addLog("Initiating voice synthesis transceiver...");
+    addLog(`Target Voice: ${selectedVoice.toUpperCase()}`);
+    addLog(`Parameters: Stability=${stability}%, Resonance=${resonance}%`);
+
+    try {
+      await new Promise(r => setTimeout(r, 600));
+      addLog("Sending text segments to orbital sound-wave compiler...");
+      
+      const payloadVoice = selectedVoice === 'lion' ? 'Fenrir' : (selectedVoice === 'jaguar' ? 'Zephyr' : (selectedVoice === 'tiger' ? 'Charon' : selectedVoice));
+
+      // Append character-like voice context to the prompt
+      let textToSend = text;
+      if (selectedVoice === 'lion') {
+         textToSend = `Lion: ${text}`;
+      } else if (selectedVoice === 'jaguar') {
+         textToSend = `Jaguar: ${text}`;
+      } else if (selectedVoice === 'tiger') {
+         textToSend = `Tiger: ${text}`;
+      }
+
+      const response = await fetch('/api/text-to-speech', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          text: textToSend, 
+          voice: payloadVoice 
+        })
+      });
+
+      if (!response.ok) {
+         throw new Error(`Synthesis rejected by server node (Status: ${response.status})`);
+      }
+
+      await new Promise(r => setTimeout(r, 500));
+      addLog("Decoding orbital signal matrix...");
+      
+      const data = await response.json();
+      
+      if (!data.audioData) {
+         throw new Error("Empty audio buffer received from server node.");
+      }
+
+      addLog(`Synthesis completed successfully. Provider: ${data.provider || 'gemini'}`);
+      
+      const newItem: TtsHistoryItem = {
+        id: `tts_${Date.now()}`,
+        text: text,
+        voice: selectedVoice,
+        audioData: data.audioData,
+        mimeType: data.mimeType || 'audio/mp3',
+        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        stability,
+        resonance
+      };
+
+      setMainAudioData({ audioData: data.audioData, mimeType: data.mimeType || 'audio/mp3' });
+      saveHistory([newItem, ...history]);
+
+      // Auto play the newly synthesized track
+      playAudioBuffer(data.audioData, data.mimeType || 'audio/mp3', () => {
+        setIsPlayingMain(false);
+      });
+      setIsPlayingMain(true);
+
+    } catch (err: any) {
+      console.error(err);
+      addLog(`ERR: ${err.message || 'Transmission failed'}`);
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
+
+  const playAudioBuffer = (base64Data: string, mimeType: string, onEnded: () => void) => {
+    if (activeAudio) {
+      activeAudio.pause();
+    }
+    const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
+    setActiveAudio(audio);
+    
+    audio.onended = () => {
+      onEnded();
+    };
+    audio.onerror = () => {
+      onEnded();
+    };
+    
+    audio.play().catch(e => {
+      console.warn("Failed to play synthesized audio inside user iframe: ", e);
+      onEnded();
+    });
+  };
+
+  const togglePlayMain = () => {
+    if (!mainAudioData) return;
+    if (isPlayingMain) {
+      if (activeAudio) activeAudio.pause();
+      setIsPlayingMain(false);
+    } else {
+      playAudioBuffer(mainAudioData.audioData, mainAudioData.mimeType, () => {
+        setIsPlayingMain(false);
+      });
+      setIsPlayingMain(true);
+    }
+  };
+
+  const togglePlayHistoryItem = (item: TtsHistoryItem) => {
+    if (currentlyPlayingId === item.id) {
+      if (activeAudio) activeAudio.pause();
+      setCurrentlyPlayingId(null);
+    } else {
+      setIsPlayingMain(false);
+      setCurrentlyPlayingId(item.id);
+      playAudioBuffer(item.audioData, item.mimeType, () => {
+        setCurrentlyPlayingId(null);
+      });
+    }
+  };
+
+  const handleDeleteHistoryItem = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentlyPlayingId === id && activeAudio) {
+      activeAudio.pause();
+      setCurrentlyPlayingId(null);
+    }
+    const filtered = history.filter(item => item.id !== id);
+    saveHistory(filtered);
+  };
+
+  const handleClearHistory = () => {
+    if (activeAudio) {
+      activeAudio.pause();
+    }
+    setCurrentlyPlayingId(null);
+    setIsPlayingMain(false);
+    saveHistory([]);
+  };
+
+  const downloadHistoryItem = (item: TtsHistoryItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const byteCharacters = atob(item.audioData);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: item.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `council_speech_${item.voice}_${item.id}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed", err);
+    }
+  };
+
+  // Helper matching character visual profiles
+  const getSelectedProfile = () => {
+    const matchedChar = characters.find(c => c.id === selectedVoice);
+    if (matchedChar) {
+      return {
+        name: matchedChar.name,
+        role: matchedChar.role,
+        avatar: matchedChar.avatar,
+        color: selectedVoice === 'lion' ? 'border-amber-500/30 text-amber-400' : (selectedVoice === 'jaguar' ? 'border-purple-500/30 text-purple-400' : 'border-red-500/30 text-red-400')
+      };
+    }
+    return {
+      name: `Neural Synthesizer ${selectedVoice}`,
+      role: "Digital Transmitter Sub-Routine",
+      avatar: null,
+      color: 'border-blue-500/30 text-blue-400'
+    };
+  };
+
+  const selectedProfile = getSelectedProfile();
+
+  const voicesDropdownList = [
+    { id: 'lion', name: 'The Visionary Lion (Fenrir Voice)', isChar: true },
+    { id: 'jaguar', name: 'The Strategist Jaguar (Zephyr Voice)', isChar: true },
+    { id: 'tiger', name: 'The Guardian Tiger (Charon Voice)', isChar: true },
+    { id: 'Puck', name: 'Neural Puck (Gruff & Deep)', isChar: false },
+    { id: 'Charon', name: 'Neural Charon (Wise Elder)', isChar: false },
+    { id: 'Kore', name: 'Neural Kore (Ethereal & Smooth)', isChar: false },
+    { id: 'Fenrir', name: 'Neural Fenrir (Commanding)', isChar: false },
+    { id: 'Zephyr', name: 'Neural Zephyr (Sleek Modern)', isChar: false }
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-4xl font-display font-medium mb-2">TTS <span className="text-amber-400">Transceiver</span></h2>
+        <p className="text-starlight/40 font-mono text-xs uppercase tracking-wider">NEURAL SPEECH FORGE & COSMIC DIALOGUE BROADCASTER</p>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+        
+        {/* Main Interface block with forms */}
+        <div className="xl:col-span-8 space-y-6">
+          <div className="glass-panel p-8 bg-[#050510]/80 relative overflow-hidden space-y-6">
+            <div className="absolute top-0 right-0 p-8 opacity-5">
+              <Mic className="w-32 h-32 text-amber-500" />
+            </div>
+
+            <div className="flex justify-between items-center pb-4 border-b border-white/5">
+              <h3 className="font-display text-xl font-bold flex items-center gap-2">
+                <Volume2 className="w-5 h-5 text-amber-500" />
+                Speech wave transmission
+              </h3>
+              
+              <div className="flex gap-2">
+                {presetTemplates.map((p, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleApplyPreset(p.text)}
+                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/15 text-[10px] font-mono text-starlight transition-all"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Input dialogue area */}
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-mono tracking-widest text-amber-400">Dialogue text payload</label>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                maxLength={1000}
+                placeholder="Declare dialogue text for intergalactic synthesis..."
+                className="w-full bg-black/40 border border-white/10 rounded-2xl p-5 text-sm leading-relaxed text-starlight placeholder-starlight/25 focus:border-amber-400/40 outline-none h-32 transition-all font-sans resize-none"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-starlight/35">
+                <span>MAX_PAYLOAD_LIMITS: 1000</span>
+                <span>{text.length} / 1000 CHARS</span>
+              </div>
+            </div>
+
+            {/* Selector Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-mono tracking-widest text-starlight/40">Select Voice Profile</label>
+                <select
+                  value={selectedVoice}
+                  onChange={(e) => setSelectedVoice(e.target.value)}
+                  className="w-full bg-black/60 border border-white/10 rounded-xl p-3 text-xs outline-none text-starlight cursor-pointer hover:border-white/20 focus:border-amber-400/30 transition-all font-sans"
+                >
+                  {voicesDropdownList.map(v => (
+                    <option key={v.id} value={v.id} className="bg-[#0b0b18] text-starlight">
+                      {v.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-starlight/40">
+                  <span>Wave Stability</span>
+                  <span>{stability}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="100"
+                  value={stability}
+                  onChange={(e) => setStability(Number(e.target.value))}
+                  className="w-full accent-amber-500 h-1 rounded-lg cursor-pointer bg-white/10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-starlight/40">
+                  <span>Cosmic Resonance</span>
+                  <span>{resonance}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="20"
+                  max="100"
+                  value={resonance}
+                  onChange={(e) => setResonance(Number(e.target.value))}
+                  className="w-full accent-amber-500 h-1 rounded-lg cursor-pointer bg-white/10"
+                />
+              </div>
+            </div>
+
+            {/* Displaying Current selected profile badge */}
+            <div className={`p-4 rounded-2xl bg-white/[0.02] border ${selectedProfile.color} flex items-center gap-4 transition-all duration-300`}>
+              <div className="w-12 h-12 rounded-xl bg-black/30 border border-white/10 overflow-hidden relative flex items-center justify-center shrink-0">
+                {selectedProfile.avatar ? (
+                  <img src={selectedProfile.avatar} alt={selectedProfile.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <Mic className="w-6 h-6 text-white/40" />
+                )}
+              </div>
+              <div>
+                <h4 className="font-display font-bold text-sm text-starlight">{selectedProfile.name}</h4>
+                <p className="text-[10px] font-mono text-starlight/50 uppercase scale-95 origin-left">{selectedProfile.role}</p>
+              </div>
+            </div>
+
+            {/* Synthesizer audio visualizer bar & triggers */}
+            <div className="flex flex-col md:flex-row items-center gap-6 pt-4 border-t border-white/5">
+              <button
+                onClick={handleSynthesize}
+                disabled={isSynthesizing || !text.trim()}
+                className="w-full md:w-auto px-8 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-bold uppercase rounded-2xl text-xs hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-40 disabled:scale-100 flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(251,191,36,0.15)] shrink-0"
+              >
+                {isSynthesizing ? (
+                  <>
+                    <RefreshCcw className="w-4 h-4 animate-spin" />
+                    SYNTHESIZING...
+                  </>
+                ) : (
+                  <>
+                    <Cpu className="w-4 h-4" />
+                    Forge Voice Signal
+                  </>
+                )}
+              </button>
+
+              {/* Dynamic Sound Wave Form */}
+              <div className="w-full flex items-center justify-center gap-1.5 h-12 bg-black/30 rounded-2xl px-6 border border-white/5 overflow-hidden">
+                {visualizerBars.map((barHeight, idx) => (
+                  <motion.div
+                    key={idx}
+                    animate={{ height: `${barHeight}%` }}
+                    transition={{ type: 'spring', damping: 10, stiffness: 100 }}
+                    style={{ minHeight: '4px' }}
+                    className={`w-1 rounded-full ${
+                      isPlayingMain || currentlyPlayingId
+                        ? selectedVoice === 'lion'
+                          ? 'bg-amber-400'
+                          : selectedVoice === 'jaguar'
+                          ? 'bg-purple-400'
+                          : selectedVoice === 'tiger'
+                          ? 'bg-red-400'
+                          : 'bg-blue-400'
+                        : 'bg-white/10'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              {mainAudioData && (
+                <button
+                  onClick={togglePlayMain}
+                  className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-starlight active:scale-95 transition-all text-sm flex items-center gap-2 shrink-0 cursor-pointer"
+                >
+                  {isPlayingMain ? <Pause className="w-4 h-4 text-amber-400" /> : <Play className="w-4 h-4" />}
+                  {isPlayingMain ? "Pause" : "Listen Output"}
+                </button>
+              )}
+            </div>
+
+          </div>
+        </div>
+
+        {/* Console & Session Log database block */}
+        <div className="xl:col-span-4 space-y-6">
+          
+          {/* Realtime Terminal Console Output */}
+          <div className="glass-panel p-6 bg-black/80 border-white/5 text-[11px] font-mono leading-relaxed h-44 flex flex-col justify-between overflow-hidden relative">
+            <div className="flex justify-between items-center text-starlight/40 pb-2 border-b border-white/5 mb-2 select-none uppercase tracking-widest text-[9px]">
+              <span>TRANSCEIVER CONSOLE STACK</span>
+              <span className="text-amber-500 animate-pulse">● STABLE_LINK</span>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-1.5 text-starlight/75 pr-1 scrollbar-thin">
+              {logMessages.length === 0 ? (
+                <p className="text-starlight/30 italic">Transceiver idle. Awaiting voice spectrum waves injection...</p>
+              ) : (
+                logMessages.map((msg, i) => (
+                  <div key={i} className={`flex items-start gap-1.5 ${msg.startsWith('ERR:') ? 'text-red-400' : msg.startsWith('Target') ? 'text-purple-400' : 'text-starlight/75'}`}>
+                    <span className="text-amber-500 select-none">&gt;</span>
+                    <p>{msg}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Synthesis History Database persist panel */}
+          <div className="glass-panel p-6 bg-[#050510]/80 border-white/5 space-y-4 flex flex-col h-[356px] overflow-hidden">
+            <div className="flex justify-between items-center pb-2 border-b border-white/5 select-none shrink-0">
+              <h4 className="font-display font-bold text-sm flex items-center gap-2">
+                <History className="w-4 h-4 text-amber-500" />
+                History Transmissions
+              </h4>
+              
+              {history.length > 0 && (
+                <button 
+                  onClick={handleClearHistory}
+                  className="text-[9px] font-mono text-red-400/80 hover:text-red-400 uppercase tracking-widest cursor-pointer hover:underline"
+                >
+                  Purge Storage
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin select-none">
+              {history.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center opacity-45 px-4">
+                  <History className="w-8 h-8 text-white/20 mb-2 border border-white/5 p-1 rounded-lg" />
+                  <p className="text-[10px] uppercase font-mono tracking-wider">Storage Clean</p>
+                  <p className="text-[9px] text-starlight/50 leading-relaxed mt-1">Compiled voices will persist here inside your local sandboxed browser database.</p>
+                </div>
+              ) : (
+                history.map((item) => {
+                  const isPlayingThis = currentlyPlayingId === item.id;
+                  return (
+                    <div 
+                      key={item.id}
+                      onClick={() => togglePlayHistoryItem(item)}
+                      className={`p-3 rounded-xl bg-black/40 border transition-all cursor-pointer flex items-center justify-between gap-4 group/item ${
+                        isPlayingThis ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 hover:border-white/10 hover:bg-black/55'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-1.5 text-[9px] font-mono tracking-wider">
+                          <span className={`${
+                            item.voice === 'lion' ? 'text-amber-400' : (item.voice === 'jaguar' ? 'text-purple-400' : 'text-blue-400')
+                          } uppercase font-bold`}>{item.voice}</span>
+                          <span className="text-white/20">•</span>
+                          <span className="text-white/40">{item.timestamp}</span>
+                        </div>
+                        <p className="text-[11px] text-starlight/75 truncate">{item.text}</p>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Play control on history item */}
+                        <button
+                          type="button"
+                          className="p-1.5 rounded bg-white/5 hover:bg-white/10 text-starlight transition-colors"
+                        >
+                          {isPlayingThis ? <Pause className="w-3 h-3 text-amber-400" /> : <Play className="w-3 h-3" />}
+                        </button>
+                        
+                        {/* Download history voice file */}
+                        <button
+                          type="button"
+                          title="Export WAV voice file"
+                          onClick={(e) => downloadHistoryItem(item, e)}
+                          className="p-1.5 rounded bg-white/5 hover:bg-white/10 text-starlight/60 hover:text-white transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                        </button>
+
+                        {/* Purge single history item */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteHistoryItem(item.id, e)}
+                          className="p-1.5 rounded bg-white/5 hover:bg-red-500/20 text-starlight/40 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  );
+};
+
 const AudioMixerLab = ({ 
   soundEffects, 
   onToggle, 
@@ -1299,7 +2144,13 @@ const AudioMixerLab = ({
   isGeneratingSFX,
   sfxPrompt,
   onSfxPromptChange,
-  onGenerateSFX
+  onGenerateSFX,
+  isGeneratingMusic = false,
+  musicPrompt = "",
+  onMusicPromptChange = () => {},
+  musicStyle = "ambient",
+  onMusicStyleChange = () => {},
+  onGenerateMusic = () => {}
 }: { 
   soundEffects: SoundEffect[],
   onToggle: (id: string) => void,
@@ -1307,7 +2158,13 @@ const AudioMixerLab = ({
   isGeneratingSFX: boolean,
   sfxPrompt: string,
   onSfxPromptChange: (val: string) => void,
-  onGenerateSFX: () => void
+  onGenerateSFX: () => void,
+  isGeneratingMusic?: boolean,
+  musicPrompt?: string,
+  onMusicPromptChange?: (val: string) => void,
+  musicStyle?: string,
+  onMusicStyleChange?: (val: string) => void,
+  onGenerateMusic?: () => void
 }) => {
   return (
     <div className="glass-panel p-8 border-white/5 bg-[#050510]/80 relative overflow-hidden">
@@ -1404,10 +2261,78 @@ const AudioMixerLab = ({
 
           {/* Music Selection Section */}
           <div>
-            <h4 className="text-[10px] font-mono text-purple-400/60 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
-              <span className="w-8 h-px bg-purple-500/20" />
-              Cosmic Soundtrack Selection
-            </h4>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-white/5 pb-4">
+              <h4 className="text-[10px] font-mono text-purple-400/60 uppercase tracking-[0.2em] flex items-center gap-2">
+                <span className="w-8 h-px bg-purple-500/20" />
+                Cosmic Soundtrack Selection
+              </h4>
+              
+              {/* Dynamic Neural Sound Forge */}
+              <div className="bg-[#09091b] border border-purple-500/10 rounded-xl p-2.5 flex flex-wrap items-center gap-3 max-w-xl">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-mono text-purple-300 uppercase">Style:</span>
+                  <div className="flex gap-1.5 ml-1">
+                    {['ambient', 'cyber', 'classical'].map((styleOpt) => (
+                      <button
+                        key={styleOpt}
+                        type="button"
+                        onClick={() => onMusicStyleChange(styleOpt)}
+                        className={`px-2 py-0.5 rounded text-[8px] font-mono uppercase transition-colors ${
+                          musicStyle === styleOpt 
+                            ? 'bg-purple-500/30 text-purple-200 border border-purple-500/40' 
+                            : 'bg-white/5 text-starlight/40 border border-transparent hover:text-starlight'
+                        }`}
+                      >
+                        {styleOpt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    placeholder="Forge custom neural loop track..."
+                    value={musicPrompt}
+                    onChange={(e) => onMusicPromptChange(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[9px] font-mono text-starlight focus:outline-none focus:border-purple-500/40"
+                    disabled={isGeneratingMusic}
+                  />
+                  <button
+                    type="button"
+                    onClick={onGenerateMusic}
+                    disabled={isGeneratingMusic || !musicPrompt.trim()}
+                    className="px-3 py-1 bg-purple-500 text-black text-[9px] font-bold rounded-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:scale-100 flex items-center gap-1 cursor-pointer"
+                  >
+                    {isGeneratingMusic ? (
+                      <RefreshCcw className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3 h-3" />
+                    )}
+                    <span>FORGE</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Loading feedback */}
+            {isGeneratingMusic && (
+              <div className="mb-6 p-4 rounded-xl bg-purple-950/20 border border-purple-500/20 text-purple-300 font-mono text-[10px] flex items-center justify-between gap-4 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <RefreshCcw className="w-4 h-4 animate-spin text-purple-400" />
+                  <div>
+                    <span className="font-bold uppercase text-purple-200">COGNITIVE MUSIC COMPILE STARTED:</span>
+                    <span className="text-purple-300/80 ml-1.5">Generating real 8-bit WAV samples with dynamic {musicStyle} overlays...</span>
+                  </div>
+                </div>
+                <div className="h-1 flex-1 max-w-[120px] bg-purple-950/50 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-purple-400 w-1/2 rounded-full animate-bounce"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {soundEffects.filter(s => s.type === 'music').map((s) => (
                 <div key={s.id} className={`glass-panel p-4 border-white/5 flex flex-col gap-4 transition-all ${s.isActive ? 'bg-purple-500/10 border-purple-500/30' : 'opacity-40'}`}>
@@ -1466,6 +2391,44 @@ const AudioMixerLab = ({
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
+
+  // --- Firebase Auth & Database Sync States ---
+  const [user, setUser] = useState<User | null>(null);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Authentication Login and Sign-Out Callbacks
+  const handleLogin = async () => {
+    try {
+      setNotification({ message: "Connecting to secure Google OAuth Core...", type: 'info' });
+      const result = await signInWithPopup(auth, googleProvider);
+      if (result.user) {
+        setNotification({ message: `Secure connection successful. Welcoming commander: ${result.user.displayName}`, type: 'success' });
+      }
+    } catch (err: any) {
+      console.error("Cognitive connection link failed: ", err);
+      setNotification({ message: `Cognitive synapse auth failure: ${err.message || String(err)}`, type: 'error' });
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setNotification({ message: "Deltas closed. Secured cloud link terminated successfully.", type: 'success' });
+    } catch (err: any) {
+      console.error("Signout failure: ", err);
+      setNotification({ message: `Link termination error: ${err.message || String(err)}`, type: 'error' });
+    }
+  };
+
+  // --- Self-Healing & Exception Simulation States ---
+  const [triggerRenderCrash, setTriggerRenderCrash] = useState(false);
+  const handleAutoHealed = React.useCallback(() => {
+    setTriggerRenderCrash(false);
+    setNotification({ 
+      message: "Telemetry Safe Guard: Deep Self-Healing cleared temporary state exceptions, hot-reconstructed components, and fully restored systems automatically!", 
+      type: "success" 
+    });
+  }, []);
 
   // --- Quota Health & API Telemetry States ---
   const [quotaStats, setQuotaStats] = useState({
@@ -1535,10 +2498,192 @@ export default function App() {
   const [generatingAvatars, setGeneratingAvatars] = useState<Record<string, boolean>>({});
   const [generatingManifestos, setGeneratingManifestos] = useState<Record<string, boolean>>({});
   const [generatingLipSyncs, setGeneratingLipSyncs] = useState<Record<string, boolean>>({});
+  const [generatingAnimateVideos, setGeneratingAnimateVideos] = useState<Record<string, boolean>>({});
   const [activeTheme, setActiveTheme] = useState(PHILOSOPHICAL_TOPICS[0]);
   const [selectedManifesto, setSelectedManifesto] = useState<{ charId: string, text: string } | null>(null);
   const [notification, setNotification] = useState<{ message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [selectingBRollForSection, setSelectingBRollForSection] = useState<string | null>(null);
+  
+  // --- Gemini Intelligence State Declaration ---
+  const [intelMessages, setIntelMessages] = useState<Array<{ role: 'user' | 'assistant', content: string, timestamp: string }>>([
+    {
+      role: 'assistant',
+      content: `[COGNITIVE CORE ON-LINE] Welcome, Commander. I am "The Oracle", the central intelligence link of the Council. I have mapped the Silicon-Carbon neural matrices of Lion, Jaguar, and Tiger. How shall we direct their philosophical energies today? I can help optimize your scripts, refine your YouTube strategies, analyze the channel diagnostics, or resolve creative dilemmas.`,
+      timestamp: new Date().toLocaleTimeString()
+    }
+  ]);
+  const [intelInput, setIntelInput] = useState('');
+  const [intelGenerating, setIntelGenerating] = useState(false);
+
+  // --- Firebase Cloud Sync Orchestration Engine ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        setIsSyncing(true);
+        try {
+          // 1. Establish User Setting profiles
+          const profileRef = doc(db, 'users', currentUser.uid);
+          const pSnap = await getDoc(profileRef);
+          if (!pSnap.exists()) {
+            await setDoc(profileRef, {
+              uid: currentUser.uid,
+              email: currentUser.email || '',
+              activeTheme: activeTheme || '',
+              lastActive: new Date().toISOString()
+            });
+          } else {
+            const cloudThemeTitle = pSnap.data().activeTheme;
+            if (cloudThemeTitle) {
+              const found = PHILOSOPHICAL_TOPICS.find(t => t === cloudThemeTitle);
+              if (found) {
+                setActiveTheme(found);
+              }
+            }
+          }
+
+          // 2. Fetch or instantiate Council characters
+          const charsRef = collection(db, 'users', currentUser.uid, 'characters');
+          const charsSnap = await getDocs(charsRef);
+          if (charsSnap.empty) {
+            for (const char of characters) {
+              await setDoc(doc(db, 'users', currentUser.uid, 'characters', char.id), char);
+            }
+          } else {
+            const cloudChars = charsSnap.docs.map(d => d.data() as Character);
+            setCharacters(cloudChars);
+          }
+
+          // 3. Fetch or instantiate custom scripts
+          const scriptsRef = collection(db, 'users', currentUser.uid, 'scripts');
+          const scriptsSnap = await getDocs(scriptsRef);
+          if (scriptsSnap.empty) {
+            for (const scr of scripts) {
+              await setDoc(doc(db, 'users', currentUser.uid, 'scripts', scr.id), scr);
+            }
+          } else {
+            const cloudScripts = scriptsSnap.docs.map(d => d.data() as ScriptSection);
+            setScripts(cloudScripts);
+          }
+
+          // 4. Fetch or instantiate historic chat messages
+          const chatRef = collection(db, 'users', currentUser.uid, 'chatHistory');
+          const chatSnap = await getDocs(chatRef);
+          if (!chatSnap.empty) {
+            const cloudMsgs = chatSnap.docs.map(d => d.data() as { role: 'user' | 'assistant', content: string, timestamp: string, createdAt?: string });
+            const sorted = [...cloudMsgs].sort((a, b) => {
+              const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return timeA - timeB;
+            });
+            if (sorted.length > 0) {
+              setIntelMessages(sorted.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp })));
+            }
+          }
+
+          setNotification({ message: "Synapses aligned successfully with secure cloud backups.", type: 'success' });
+        } catch (error) {
+          console.error("Cloud synchronization mapping aborted: ", error);
+          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
+        } finally {
+          setIsSyncing(false);
+         }
+      } else {
+        // Safe disconnection: no manual reset to keep current context offline
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Characters change synchronization emitter
+  useEffect(() => {
+    if (!user) return;
+    const syncCharacters = async () => {
+      try {
+        setIsSyncing(true);
+        for (const char of characters) {
+          await setDoc(doc(db, 'users', user.uid, 'characters', char.id), char);
+        }
+      } catch (err) {
+        console.error("Failed to sync characters to Firestore", err);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      syncCharacters();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [characters, user]);
+
+  // Scripts change synchronization emitter
+  useEffect(() => {
+    if (!user) return;
+    const syncScripts = async () => {
+      try {
+        setIsSyncing(true);
+        for (const scr of scripts) {
+          await setDoc(doc(db, 'users', user.uid, 'scripts', scr.id), scr);
+        }
+      } catch (err) {
+        console.error("Failed to sync scripts to Firestore", err);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      syncScripts();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [scripts, user]);
+
+  // Oracle Chat history change synchronization emitter
+  useEffect(() => {
+    if (!user) return;
+    const syncChat = async () => {
+      try {
+        setIsSyncing(true);
+        for (let i = 0; i < intelMessages.length; i++) {
+          const msg = intelMessages[i];
+          const msgId = `msg-${i}`;
+          await setDoc(doc(db, 'users', user.uid, 'chatHistory', msgId), {
+            id: msgId,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            createdAt: new Date().toISOString()
+          });
+        }
+      } catch (err) {
+        console.error("Failed to sync chat history to Firestore", err);
+      } finally {
+        setIsSyncing(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      syncChat();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [intelMessages, user]);
+
+  // Active theme profile synchronization
+  useEffect(() => {
+    if (!user || !activeTheme) return;
+    const syncTheme = async () => {
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email || '',
+          activeTheme: activeTheme,
+          lastActive: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.error("Failed to sync theme settings to Firestore", err);
+      }
+    };
+    syncTheme();
+  }, [activeTheme, user]);
   
   const [showTrailer, setShowTrailer] = useState(false);
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null);
@@ -1550,6 +2695,9 @@ export default function App() {
   const [soundEffects, setSoundEffects] = useState<SoundEffect[]>(INITIAL_SOUND_EFFECTS);
   const [isGeneratingSFX, setIsGeneratingSFX] = useState(false);
   const [sfxPrompt, setSfxPrompt] = useState("");
+  const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
+  const [musicPrompt, setMusicPrompt] = useState("");
+  const [musicStyle, setMusicStyle] = useState("ambient");
 
   // ACTIVE WEB AUDIO CLIENT-SIDE SYNTHESIZER & MULTI-LAYER AUDIO ENGINE
   const audioContextRef = React.useRef<AudioContext | null>(null);
@@ -1707,7 +2855,7 @@ export default function App() {
       soundEffects.forEach((s) => {
         if (s.isActive) {
           if (s.type === 'music') {
-            const url = MUSIC_URLS[s.id];
+            const url = s.audioData ? `data:${s.mimeType || 'audio/wav'};base64,${s.audioData}` : MUSIC_URLS[s.id];
             if (url) {
               let record = audioNodesRef.current[s.id];
               if (!record || !record.audioEl) {
@@ -1716,9 +2864,7 @@ export default function App() {
                 audioEl.crossOrigin = "anonymous";
                 audioEl.volume = s.volume * 0.35;
                 audioNodesRef.current[s.id] = { gainNode: null as any, audioEl };
-                audioEl.play().catch(e => {
-                  console.warn(`Encountered standard autoplay blocker or failed loading path for ${s.id}`);
-                });
+                audioEl.play().catch(() => {});
               } else {
                 record.audioEl.volume = s.volume * 0.35;
                 if (record.audioEl.paused) {
@@ -1895,6 +3041,61 @@ export default function App() {
     setNotification({ message: "Neural sfx synthesized successfully.", type: 'success' });
   };
 
+  const generateNeuralMusic = async () => {
+    if (!musicPrompt) return;
+    setIsGeneratingMusic(true);
+    setNotification({ message: `Generating dynamic cosmic soundtrack: "${musicPrompt}"...`, type: 'info' });
+    
+    try {
+      const response = await fetch('/api/generate-music', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: musicPrompt,
+          style: musicStyle
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Neural sound core link failed (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || "Music compilation error.");
+      }
+
+      const newTrack: SoundEffect = {
+        id: `music-gen-${Date.now()}`,
+        label: data.label,
+        volume: 0.4,
+        isActive: true,
+        type: 'music',
+        description: data.description,
+        audioData: data.audioData,
+        mimeType: data.mimeType || 'audio/wav'
+      };
+
+      // Set other music to inactive so the newly compiled track is prioritized
+      setSoundEffects(prev => {
+        const resetSongs = prev.map(s => s.type === 'music' ? { ...s, isActive: false } : s);
+        return [newTrack, ...resetSongs];
+      });
+
+      setMusicPrompt("");
+      setNotification({ message: `Soundtrack '${data.label}' initialized and synchronized in the active atmospheric feed.`, type: 'success' });
+      recordApiTelemetry(true);
+    } catch (err: any) {
+      console.error(err);
+      setNotification({ message: `Dynamic song generation aborted: ${err.message || err}`, type: 'error' });
+      recordApiTelemetry(false, 'OTHER');
+    } finally {
+      setIsGeneratingMusic(false);
+    }
+  };
+
   const toggleSoundEffect = (id: string) => {
     playUIClick();
     setSoundEffects(prev => {
@@ -1916,6 +3117,10 @@ export default function App() {
 
   const updateLipSyncSettings = (id: string, settings: Character['syncSettings']) => {
     setCharacters(prev => prev.map(c => c.id === id ? { ...c, syncSettings: settings } : c));
+  };
+
+  const updateCharacterTheme = (id: string, theme: string) => {
+    setCharacters(prev => prev.map(c => c.id === id ? { ...c, aestheticTheme: theme } : c));
   };
 
   const [universeLore, setUniverseLore] = useState({
@@ -2279,6 +3484,139 @@ export default function App() {
     }
   };
 
+  const generateAnimateVideo = async (charId: string, prompt?: string) => {
+    try {
+      const char = characters.find(c => c.id === charId);
+      if (!char || !char.avatar) {
+        setNotification({ message: "Character avatar required for Veo animation.", type: 'error' });
+        return;
+      }
+
+      setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: true }));
+      setNotification({ message: `Initiating Google Veo cinematic animation for ${char.name}...`, type: 'info' });
+
+      // If they use standard prompt, make it highly cinematic
+      const finalPrompt = prompt || `A cinematic panning camera motion, breathing and moving subtly, of ${char.name}, highly detailed digital art, science fiction elements.`;
+
+      const response = await fetch('/api/animate-image-to-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: char.avatar,
+          prompt: finalPrompt,
+          aspectRatio: "16:9",
+          resolution: "720p"
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Veo animation forge failed (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      // Start polling for status
+      const pollInterval = setInterval(async () => {
+        try {
+          const queryParams = data.operationName 
+            ? `operationName=${encodeURIComponent(data.operationName)}&provider=veo`
+            : `videoId=${data.videoId}&provider=simulated_veo`;
+          
+          const statusRes = await fetch(`/api/check-animate-status?${queryParams}`);
+          
+          if (!statusRes.ok) {
+            const errorData = await statusRes.json();
+            throw new Error(errorData.error || "Veo status link failed");
+          }
+
+          const statusData = await statusRes.json();
+          
+          if (statusData.status === 'completed') {
+            clearInterval(pollInterval);
+            setCharacters(prev => prev.map(c => c.id === charId ? { ...c, animatedVideoUrl: statusData.videoUrl } : c));
+            setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
+            setNotification({ message: `${char.name} has been animated into a breathtaking video!`, type: 'success' });
+          }
+        } catch (pollErr: any) {
+          console.error("Polling failed", pollErr);
+          clearInterval(pollInterval);
+          setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
+          setNotification({ message: `Veo status failed: ${parseAIError(pollErr)}`, type: 'error' });
+        }
+      }, 5000);
+
+    } catch (err: any) {
+      console.error(err);
+      setNotification({ message: `Veo initiation failed: ${parseAIError(err)}`, type: 'error' });
+      setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
+    }
+  };
+
+  const sendIntelQuery = async (queryOverride?: string) => {
+    const textQuery = (queryOverride || intelInput).trim();
+    if (!textQuery) return;
+
+    if (!queryOverride) {
+      setIntelInput('');
+    }
+
+    const userMsg = {
+      role: 'user' as const,
+      content: textQuery,
+      timestamp: new Date().toLocaleTimeString()
+    };
+
+    setIntelMessages(prev => [...prev, userMsg]);
+    setIntelGenerating(true);
+
+    try {
+      const response = await fetch('/api/gemini-intelligence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: [...intelMessages, userMsg].map(m => ({ role: m.role, content: m.content })),
+          context: {
+            activeTheme,
+            characterCount: characters.length,
+            roles: characters.map(c => c.role),
+            scriptLength: scripts.length
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Intelligence core connection interrupted (${response.status})`);
+      }
+
+      const data = await response.json();
+      
+      setIntelMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: data.text || '[DIAGNOSTIC ARCHIVE RESOLVED NO TELEMETRY]',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+
+      recordApiTelemetry(true);
+    } catch (err: any) {
+      console.error(err);
+      const isQuota = err.message?.includes("429") || err.message?.includes("quota") || err.toString().includes("429");
+      recordApiTelemetry(false, isQuota ? 'QUOTA' : 'OTHER');
+      setNotification({ message: `Oracle link delayed: ${parseAIError(err)}`, type: 'error' });
+      
+      setIntelMessages(prev => [...prev, {
+        role: 'assistant' as const,
+        content: `[ORACLE OFFLINE - SECURE LOCAL COGNITIVE CORE STANDBY]\nWe encountered a signal attenuation. Recovered from diagnostic buffers:\n\n*The backup silicon relays have booted local text simulations.* Please verify your API Key in the top right Settings > Secrets.`,
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setIntelGenerating(false);
+    }
+  };
+
   const generateVoice = async (sectionId: string, text: string, voice: string = 'random') => {
     try {
       setScripts(prev => prev.map(s => s.id === sectionId ? { ...s, isVoiceGenerating: true } : s));
@@ -2425,7 +3763,13 @@ export default function App() {
   const currentCharTheme = currentManifestoChar ? (CHARACTER_THEMES[currentManifestoChar.id] || CHARACTER_THEMES.lion) : CHARACTER_THEMES.lion;
 
   return (
-    <div className="flex h-screen bg-[#02020a] overflow-hidden relative">
+    <SelfHealingErrorBoundary onAutoHeal={handleAutoHealed}>
+      {triggerRenderCrash && (
+        (() => {
+          throw new Error("Simulated Temporal Synapse Collision (Stack Error 0x8F92) - Controlled Injection");
+        })()
+      )}
+      <div className="flex h-screen bg-[#02020a] overflow-hidden relative">
       <NeuralDataStream />
       {/* Background Visuals */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden bg-nebula-deep">
@@ -2462,6 +3806,10 @@ export default function App() {
         handleTabChange={handleTabChange} 
         quotaStats={quotaStats}
         onOpenQuotaModal={() => setIsQuotaModalOpen(true)}
+        user={user}
+        isSyncing={isSyncing}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
       />
 
       <NeuralProcessMonitor 
@@ -2936,7 +4284,322 @@ export default function App() {
                            >
                               {isNeuralLinkActive ? 'DISCONNECT NEURAL LINK' : 'ESTABLISH NEURAL LINK'}
                            </button>
+
+                           {(() => {
+                             const activeSound = soundEffects.find(s => s.isActive && (s.type === 'music' || s.type === 'ambient'));
+                             return (
+                               <SignalAnalysisVisualizer 
+                                 volume={activeSound ? activeSound.volume : 0}
+                                 isActive={activeSound ? activeSound.isActive : false}
+                                 trackName={activeSound ? activeSound.label : 'STANDBY'}
+                               />
+                             );
+                           })()}
+
+                           {/* Live Background Audio Processing Monitor */}
+                           <div className="p-4 bg-purple-500/5 rounded-2xl border border-purple-500/15 space-y-3">
+                             <div className="flex items-center justify-between">
+                               <div className="flex items-center gap-3">
+                                 <Activity className={`w-4 h-4 text-purple-400 ${soundEffects.some(s => s.isActive) ? 'animate-pulse' : ''}`} />
+                                 <span className="text-xs font-semibold text-purple-200">Live Background Audio Processing</span>
+                               </div>
+                               <div className="flex items-center gap-1.5">
+                                 <span className="relative flex h-2 w-2">
+                                   {soundEffects.some(s => s.isActive) && (
+                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                                   )}
+                                   <span className={`relative inline-flex rounded-full h-2 w-2 ${soundEffects.some(s => s.isActive) ? 'bg-purple-400' : 'bg-white/10'}`}></span>
+                                 </span>
+                                 <span className="text-[9px] font-mono uppercase text-purple-300 font-black tracking-wider">
+                                   {soundEffects.some(s => s.isActive) ? 'PROCESSING' : 'STANDBY'}
+                                 </span>
+                               </div>
+                             </div>
+
+                             <div className="space-y-1 text-[10px] font-mono text-starlight/60">
+                               <div className="flex justify-between items-center bg-white/[0.01] px-2.5 py-1.5 rounded-lg border border-white/5">
+                                 <span className="text-starlight/35 uppercase tracking-wider">Soundtrack Engine</span>
+                                 <span className="text-amber-400 font-bold truncate max-w-[170px]">
+                                   {soundEffects.find(s => s.isActive && s.type === 'music')?.label || 'MUTED'}
+                                 </span>
+                               </div>
+                               <div className="flex justify-between items-center bg-white/[0.01] px-2.5 py-1.5 rounded-lg border border-white/5">
+                                 <span className="text-starlight/35 uppercase tracking-wider">Cosmic Hum Filter</span>
+                                 <span className="text-blue-400 font-bold">
+                                   {soundEffects.find(s => s.isActive && s.type === 'ambient')?.label ? 'ACTIVE' : 'OFF'}
+                                 </span>
+                               </div>
+                               <div className="flex justify-between items-center bg-white/[0.01] px-2.5 py-1.5 rounded-lg border border-white/5">
+                                 <span className="text-starlight/35 uppercase tracking-wider">Active Channels</span>
+                                 <span className="text-purple-400 font-bold">
+                                   {soundEffects.filter(s => s.isActive).length} Cores Active
+                                 </span>
+                               </div>
+                             </div>
+                           </div>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Autonomic Diagnostics & Self Healing Section */}
+                    <div className="mt-10 pt-8 border-t border-white/5 space-y-6">
+                      <div className="text-left">
+                        <h4 className="text-starlight font-bold mb-1.5 flex items-center gap-2">
+                          <Shield className="w-5 h-5 text-amber-400 animate-pulse" />
+                          Autonomic Diagnostics & Self-Healing Guard
+                        </h4>
+                        <p className="text-xs text-starlight/60">
+                          Our real-time active error boundary intercepts unexpected thread crashes, resets unstable reactive parameters, and returns the workspace to full live visual replication automatically.
+                        </p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        {/* Diagnostic Indicator 1 */}
+                        <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3.5 text-left">
+                          <div className="p-2.5 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
+                            <HeartPulse className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="block text-[9px] font-mono text-starlight/40 uppercase">GUARD STATUS</span>
+                            <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                              </span>
+                              SECURE & ACTIVE
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Diagnostic Indicator 2 */}
+                        <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3.5 text-left">
+                          <div className="p-2.5 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400">
+                            <Activity className="w-5 h-5" />
+                          </div>
+                           <div>
+                             <span className="block text-[9px] font-mono text-starlight/40 uppercase">RECOVERY DEPLOYED</span>
+                             <span className="text-xs font-bold text-starlight mt-0.5 block font-mono">
+                               AUTO RE-MOUNT
+                             </span>
+                           </div>
+                        </div>
+
+                        {/* Diagnostic Indicator 3 */}
+                        <div className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl flex items-center gap-3.5 text-left text-ellipsis overflow-hidden">
+                          <div className="p-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-400">
+                            <Bug className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <span className="block text-[9px] font-mono text-starlight/40 uppercase">AUTO-REPAIRED FAULTS</span>
+                            <span className="text-xs font-bold text-amber-400 mt-0.5 block font-mono">
+                              DYNAMIC
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-5.5 bg-amber-500/[0.02] border border-amber-500/10 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-6 text-left">
+                        <div className="space-y-1">
+                          <h5 className="text-xs font-bold text-starlight flex items-center gap-1.5">
+                            <Terminal className="w-4 h-4 text-amber-500" />
+                            Simulate Critical Render Exception
+                          </h5>
+                          <p className="text-[11px] text-starlight/60 leading-relaxed max-w-lg">
+                            Inject an artificial React rendering exception into the virtual DOM tree to launch the sandbox isolation terminal, inspect real-time log diagnosis, and execute automatic correction.
+                          </p>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setNotification({ message: "Injecting artificial visual thread crash in: 3, 2, 1...", type: 'info' });
+                            setTimeout(() => {
+                              setTriggerRenderCrash(true);
+                            }, 1200);
+                          }}
+                          className="w-full sm:w-auto px-5 py-3 bg-red-500/10 border border-red-500/20 hover:border-red-500/40 hover:bg-red-500/20 text-red-400 rounded-xl text-xs font-mono font-bold active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 animate-pulse border-dashed"
+                        >
+                          <AlertOctagon className="w-4 h-4" />
+                          INJECT SIMULATED BUG
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'intelligence' && (
+              <motion.div
+                key="intelligence"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h2 className="text-4xl font-display font-medium mb-2">Cognitive <span className="text-orange-400">Core</span></h2>
+                  <p className="text-starlight/40 font-mono text-xs">DIRECT BIOMETRICAL CONVOLUTION TRANSMISSIONS WITH THE ORACLE INTERFACE</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Chat interface */}
+                  <div className="lg:col-span-2 glass-panel p-6 flex flex-col h-[600px] relative overflow-hidden">
+                    {/* Header bar */}
+                    <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-ping" />
+                        <span className="font-mono text-xs text-orange-400 tracking-wider uppercase">Trans-Secured Neural Bandwidth</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm("Confirm secure erase of Oracle context cache?")) {
+                            setIntelMessages([
+                              {
+                                role: 'assistant',
+                                content: `[COGNITIVE CORE RESET_SECURED] Memory registers initialized. Silicon-Carbon synapses synchronized. Commander, I stand ready to receive your strategic directives.`,
+                                timestamp: new Date().toLocaleTimeString()
+                              }
+                            ]);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-white/5 hover:bg-red-500/20 text-starlight/40 hover:text-red-400 font-mono text-[9px] uppercase tracking-wider transition-all"
+                      >
+                        Secure Purge
+                      </button>
+                    </div>
+
+                    {/* Messages Container */}
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                      {intelMessages.map((msg, idx) => (
+                        <div
+                          key={idx}
+                          className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[9px] font-mono text-starlight/30 uppercase">
+                              {msg.role === 'user' ? 'Commander (You)' : 'Oracle Intelligence'}
+                            </span>
+                            <span className="text-[9px] font-mono text-starlight/20">{msg.timestamp}</span>
+                          </div>
+                          <div
+                            className={`p-4 rounded-2xl max-w-[85%] text-xs leading-relaxed whitespace-pre-wrap font-sans ${
+                              msg.role === 'user'
+                                ? 'bg-orange-500/15 border border-orange-500/25 text-orange-200'
+                                : 'bg-[#090918] border border-white/5 text-starlight/80 font-mono whitespace-pre-wrap'
+                            }`}
+                          >
+                            {msg.content}
+                          </div>
+                        </div>
+                      ))}
+                      {intelGenerating && (
+                        <div className="flex flex-col items-start">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[9px] font-mono text-orange-400 uppercase animate-pulse">Syncing Silicon Synapses</span>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-orange-950/20 border border-orange-500/20 text-orange-300 font-mono text-xs flex items-center gap-2">
+                            <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                            <span>COGNITIVE RELAYS INTEGRATING MULTI-MODAL FEEDBACK...</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chat Input form */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        sendIntelQuery();
+                      }}
+                      className="mt-4 flex gap-3"
+                    >
+                      <input
+                        type="text"
+                        value={intelInput}
+                        onChange={(e) => setIntelInput(e.target.value)}
+                        placeholder="Transmit command strings or ask Oracle for counsel (e.g. status)..."
+                        disabled={intelGenerating}
+                        className="flex-1 px-4 py-3 bg-[#03030b] border border-white/10 rounded-xl font-mono text-xs text-starlight/90 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/30 placeholder-starlight/20 transition-all disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={intelGenerating || !intelInput.trim()}
+                        className="px-5 py-3 bg-orange-500 disabled:bg-white/5 text-black disabled:text-starlight/20 font-bold rounded-xl text-xs hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer animate-pulse-fast"
+                      >
+                        Transmit
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Sidebar stats & grounding actions */}
+                  <div className="space-y-6">
+                    {/* Status card */}
+                    <div className="glass-panel p-6 space-y-4">
+                      <h3 className="text-sm font-mono tracking-widest text-starlight/50 uppercase border-b border-white/5 pb-2">Grounding Telemetry</h3>
+                      <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                        <div className="bg-[#050510] p-3 rounded-xl border border-white/5">
+                          <p className="text-starlight/30 text-[9px] uppercase tracking-wider">ACTIVE CONVERSATION</p>
+                          <p className="text-orange-400 font-bold mt-1">{intelMessages.length} Messages</p>
+                        </div>
+                        <div className="bg-[#050510] p-3 rounded-xl border border-white/5">
+                          <p className="text-starlight/30 text-[9px] uppercase tracking-wider">INTELLIGENCE KEY</p>
+                          <p className="text-green-400 font-bold mt-1">EMBEDDED SECURE</p>
+                        </div>
+                        <div className="bg-[#050510] p-3 rounded-xl border border-white/5">
+                          <p className="text-starlight/30 text-[9px] uppercase tracking-wider">COUNCIL MEMBERS</p>
+                          <p className="text-starlight/85 font-bold mt-1">{characters.length} Node Links</p>
+                        </div>
+                        <div className="bg-[#050510] p-3 rounded-xl border border-white/5">
+                          <p className="text-starlight/30 text-[9px] uppercase tracking-wider">SCRIPT INDEX</p>
+                          <p className="text-starlight/85 font-bold mt-1">{scripts.length} Block Modules</p>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-orange-500/10 rounded-xl border border-orange-500/20 text-[10px] font-mono leading-relaxed text-orange-300">
+                        <p className="font-bold uppercase tracking-wider mb-1">COGNITIONAL NOTE</p>
+                        This interface communicates with Google Gemini over robust TLS streams, feeding full council telemetry directly to context windows to ensure accurate suggestions.
+                      </div>
+                    </div>
+
+                    {/* Prebuilt Action Nodes */}
+                    <div className="glass-panel p-6 space-y-4">
+                      <h3 className="text-sm font-mono tracking-widest text-starlight/50 uppercase border-b border-white/5 pb-2">Interactive Directives</h3>
+                      <p className="text-[10px] text-starlight/40 leading-relaxed font-sans">Click any of the precompiled neural signals below to quickly run deep Oracle actions:</p>
+                      
+                      <div className="space-y-2.5">
+                        <button
+                          type="button"
+                          onClick={() => sendIntelQuery("Run active core status health diagnostics on the Council Triumvirate.")}
+                          className="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-orange-500/30 hover:bg-[#08081a] transition-all text-xs text-starlight/80 font-mono flex justify-between items-center group cursor-pointer"
+                        >
+                          <span className="group-hover:text-orange-400 transition-colors">⚡ core status diagnostics</span>
+                          <span className="text-[9px] text-starlight/20 select-none">→</span >
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendIntelQuery("Suggest 3 radical, philosophically heavy dialogue topics for the next Episode.")}
+                          className="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-orange-500/30 hover:bg-[#08081a] transition-all text-xs text-starlight/80 font-mono flex justify-between items-center group cursor-pointer"
+                        >
+                          <span className="group-hover:text-orange-400 transition-colors">🎬 brainstorm dialogue scripts</span>
+                          <span className="text-[9px] text-starlight/20 select-none">→</span >
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendIntelQuery("Provide algorithmic guidelines to optimize the title and tags of the council videos for high signal propagation.")}
+                          className="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-orange-500/30 hover:bg-[#08081a] transition-all text-xs text-starlight/80 font-mono flex justify-between items-center group cursor-pointer"
+                        >
+                          <span className="group-hover:text-orange-400 transition-colors">📈 youtube signal optimizations</span>
+                          <span className="text-[9px] text-starlight/20 select-none">→</span >
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendIntelQuery("Analyze the core philosophical tension between Silicon species (analog data matrices) and Carbon entities (biological neurons) in Year 12,450 post-Singularity.")}
+                          className="w-full text-left p-3 rounded-xl bg-white/5 border border-white/5 hover:border-orange-500/30 hover:bg-[#08081a] transition-all text-xs text-starlight/80 font-mono flex justify-between items-center group cursor-pointer"
+                        >
+                          <span className="group-hover:text-orange-400 transition-colors">🪐 analyze silicon vs carbon lore</span>
+                          <span className="text-[9px] text-starlight/20 select-none">→</span >
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -2964,10 +4627,13 @@ export default function App() {
                       onGenerate={generateAvatar} 
                       onGenerateManifesto={generateManifesto}
                       onGenerateLipSync={generateLipSync}
+                      onAnimateImageToVideo={generateAnimateVideo}
                       onUpdateSync={updateLipSyncSettings}
+                      onUpdateTheme={updateCharacterTheme}
                       isGenerating={!!generatingAvatars[char.id]} 
                       isManifestoGenerating={!!generatingManifestos[char.id]}
                       isLipSyncGenerating={!!generatingLipSyncs[char.id]}
+                      isAnimateVideoGenerating={!!generatingAnimateVideos[char.id]}
                     />
                   ))}
                 </div>
@@ -3003,6 +4669,30 @@ export default function App() {
                   onSelectBRoll={setSelectingBRollForSection}
                   selectingBRollForSection={selectingBRollForSection}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === 'tts' && (
+              <motion.div
+                key="tts"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <TtsTransceiver characters={characters} />
+              </motion.div>
+            )}
+
+            {activeTab === 'media-lab' && (
+              <motion.div
+                key="media-lab"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <MediaLab characters={characters} activeTheme={activeTheme} />
               </motion.div>
             )}
 
@@ -3080,6 +4770,12 @@ export default function App() {
                       sfxPrompt={sfxPrompt}
                       onSfxPromptChange={setSfxPrompt}
                       onGenerateSFX={generateNeuralSFX}
+                      isGeneratingMusic={isGeneratingMusic}
+                      musicPrompt={musicPrompt}
+                      onMusicPromptChange={setMusicPrompt}
+                      musicStyle={musicStyle}
+                      onMusicStyleChange={setMusicStyle}
+                      onGenerateMusic={generateNeuralMusic}
                     />
 
                     <div className="glass-panel p-6 border-amber-500/10 bg-amber-500/[0.02] flex items-start gap-4">
@@ -3988,5 +5684,6 @@ export default function App() {
       )}
     </AnimatePresence>
     </div>
+    </SelfHealingErrorBoundary>
   );
 }
