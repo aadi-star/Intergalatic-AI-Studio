@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Intergalactic AI Studio",
+  "description": "Production dashboard for creating AI-powered cosmic dialogues, intergalactic council videos, and real-time Android Companion link synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
