@@ -34,32 +34,43 @@ service cloud.firestore {
       return data.keys().hasAll(['uid', 'email'])
         && data.uid is string && data.uid.size() <= 128
         && data.email is string && data.email.size() <= 256
-        && (!data.keys().contains('activeTheme') || data.activeTheme is string && data.activeTheme.size() <= 128);
+        && data.get('activeTheme', '') is string && data.get('activeTheme', '').size() <= 128
+        && data.get('lastActive', '') is string && data.get('lastActive', '').size() <= 128
+        && data.get('trailerUrl', '') is string && data.get('trailerUrl', '').size() <= 2048;
     }
 
     function isValidCharacter(data) {
-      return data.keys().hasAll(['id', 'name', 'role'])
+      return data.keys().hasAll(['id', 'name', 'role', 'description'])
         && data.id is string && data.id.size() <= 128
         && data.name is string && data.name.size() <= 128
         && data.role is string && data.role.size() <= 256
-        && (!data.keys().contains('status') || data.status is string && data.status.size() <= 128)
-        && (!data.keys().contains('manifesto') || data.manifesto is string && data.manifesto.size() <= 65536)
-        && (!data.keys().contains('avatarUrl') || data.avatarUrl is string && data.avatarUrl.size() <= 2048);
+        && data.description is string && data.description.size() <= 2048
+        && data.get('avatar', '') is string && data.get('avatar', '').size() <= 2048
+        && data.get('voice', '') is string && data.get('voice', '').size() <= 128
+        && data.get('trailerUrl', '') is string && data.get('trailerUrl', '').size() <= 2048
+        && data.get('manifesto', '') is string && data.get('manifesto', '').size() <= 65536
+        && data.get('lipSyncUrl', '') is string && data.get('lipSyncUrl', '').size() <= 2048
+        && data.get('animatedVideoUrl', '') is string && data.get('animatedVideoUrl', '').size() <= 2048
+        && data.get('aestheticTheme', '') is string && data.get('aestheticTheme', '').size() <= 128
+        && (data.get('syncSettings', null) == null || (
+            data.syncSettings is map
+            && data.syncSettings.get('phonemeSensitivity', 0.0) is number
+            && data.syncSettings.get('jawRange', 0.0) is number
+            && data.syncSettings.get('blinkFrequency', 0.0) is number
+        ));
     }
 
     function isValidScriptSection(data) {
-      return data.keys().hasAll(['id', 'title', 'speaker', 'content'])
+      return data.keys().hasAll(['id', 'title', 'content', 'status'])
         && data.id is string && data.id.size() <= 128
         && data.title is string && data.title.size() <= 256
-        && data.speaker is string && data.speaker.size() <= 128
         && data.content is string && data.content.size() <= 65536
-        && (!data.keys().contains('voice') || data.voice is string && data.voice.size() <= 128)
-        && (!data.keys().contains('audioData') || data.audioData is string && data.audioData.size() <= 20000000)
-        && (!data.keys().contains('mimeType') || data.mimeType is string && data.mimeType.size() <= 128)
-        && (!data.keys().contains('animVideoUrl') || data.animVideoUrl is string && data.animVideoUrl.size() <= 2048)
-        && (!data.keys().contains('duration') || data.duration is number)
-        && (!data.keys().contains('isVoiceGenerating') || data.isVoiceGenerating is bool)
-        && (!data.keys().contains('isAnimateGenerating') || data.isAnimateGenerating is bool);
+        && data.status is string && (data.status == 'pending' || data.status == 'generating' || data.status == 'completed')
+        && data.get('audioData', '') is string && data.get('audioData', '').size() <= 20000000
+        && data.get('audioMimeType', '') is string && data.get('audioMimeType', '').size() <= 128
+        && data.get('bRollUrl', '') is string && data.get('bRollUrl', '').size() <= 2048
+        && data.get('bRollLabel', '') is string && data.get('bRollLabel', '').size() <= 256
+        && data.get('isVoiceGenerating', false) is bool;
     }
 
     function isValidChatHistory(data) {
@@ -67,7 +78,8 @@ service cloud.firestore {
         && data.id is string && data.id.size() <= 128
         && data.role is string && (data.role == 'user' || data.role == 'assistant')
         && data.content is string && data.content.size() <= 65536
-        && data.timestamp is string && data.timestamp.size() <= 128;
+        && data.timestamp is string && data.timestamp.size() <= 128
+        && data.get('createdAt', '') is string && data.get('createdAt', '').size() <= 128;
     }
 
     // --- COGNITIVE ROUTING & RULE MATCHING ---

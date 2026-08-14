@@ -38,9 +38,10 @@ interface Character {
 interface MediaLabProps {
   characters: Character[];
   activeTheme: string;
+  onAddBRoll?: (bRoll: { id: string; url: string; label: string }) => void;
 }
 
-export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) => {
+export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme, onAddBRoll }) => {
   const [subTab, setSubTab] = useState<'video' | 'transcribe' | 'voice'>('video');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' | null }>({ message: '', type: null });
 
@@ -52,6 +53,89 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
   const [videoJob, setVideoJob] = useState<{ videoId?: string; operationName?: string; provider?: string } | null>(null);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [videoProgressText, setVideoProgressText] = useState('');
+  const [localVideoUrl, setLocalVideoUrl] = useState<string | null>(null);
+  const [loadingVideoBlob, setLoadingVideoBlob] = useState(false);
+  const [videoLoadState, setVideoLoadState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [videoErrorDetails, setVideoErrorDetails] = useState<string | null>(null);
+  const [canPlayReady, setCanPlayReady] = useState(false);
+  const [downloadingVideo, setDownloadingVideo] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const getVideoMimeType = (url: string | null): string => {
+    if (!url) return 'video/mp4';
+    const lowerUrl = url.toLowerCase();
+    if (lowerUrl.includes('.webm')) return 'video/webm';
+    if (lowerUrl.includes('.ogg') || lowerUrl.includes('.ogv')) return 'video/ogg';
+    if (lowerUrl.includes('.avi')) return 'video/x-msvideo';
+    if (lowerUrl.includes('.mov')) return 'video/quicktime';
+    if (lowerUrl.includes('.mkv')) return 'video/x-matroska';
+    return 'video/mp4';
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (generatedVideoUrl) {
+      setVideoLoadState('loading');
+      setVideoErrorDetails(null);
+      setCanPlayReady(false);
+      
+      if (generatedVideoUrl.startsWith('data:')) {
+        setLocalVideoUrl(generatedVideoUrl);
+        setVideoLoadState('loaded');
+        setCanPlayReady(true);
+        return;
+      }
+      if (generatedVideoUrl.startsWith('http') && !generatedVideoUrl.includes('/api/')) {
+        const proxiedUrl = `/api/proxy-video?url=${encodeURIComponent(generatedVideoUrl)}`;
+        setLocalVideoUrl(proxiedUrl);
+        return;
+      }
+      
+      setLoadingVideoBlob(true);
+
+      const fetchWithRetry = async (url: string, maxRetries = 3, initialDelay = 1000): Promise<Blob> => {
+        let lastError: any = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Video fetch status code ${res.status}`);
+            return await res.blob();
+          } catch (err: any) {
+            lastError = err;
+            console.warn(`[Video Fetch Platform] Trial ${attempt}/${maxRetries} failed for ${url}:`, err);
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, initialDelay * attempt));
+            }
+          }
+        }
+        throw lastError || new Error("Failed after maximum retries");
+      };
+
+      fetchWithRetry(generatedVideoUrl)
+        .then(blob => {
+          if (!active) return;
+          const url = URL.createObjectURL(blob);
+          setLocalVideoUrl(url);
+          setLoadingVideoBlob(false);
+        })
+        .catch(err => {
+          if (!active) return;
+          console.error("Local video blob generation failed, attempting backup-proxy fallback stream:", err);
+          const proxiedUrl = `/api/proxy-video?url=${encodeURIComponent(generatedVideoUrl)}`;
+          setLocalVideoUrl(proxiedUrl);
+          setLoadingVideoBlob(false);
+        });
+
+      return () => {
+        active = false;
+      };
+    } else {
+      setLocalVideoUrl(null);
+      setVideoLoadState('idle');
+      setVideoErrorDetails(null);
+      setCanPlayReady(false);
+    }
+  }, [generatedVideoUrl]);
 
   // --- 2. Transcribe States ---
   const [isRecording, setIsRecording] = useState(false);
@@ -61,6 +145,7 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
   const [transcribing, setTranscribing] = useState(false);
   const [transcriptionResult, setTranscriptionResult] = useState('');
   const [copiedTranscription, setCopiedTranscription] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -125,6 +210,56 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
   // --- Notification helper ---
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error') => {
     setNotification({ message, type });
+  };
+
+  const downloadVideo = async () => {
+    if (!generatedVideoUrl) {
+      triggerNotification("No generated video found to download.", "error");
+      return;
+    }
+    setDownloadingVideo(true);
+    triggerNotification("Initializing secure cross-origin file download...", "info");
+    
+    try {
+      let downloadUrl = generatedVideoUrl;
+      if (localVideoUrl && (localVideoUrl.startsWith('blob:') || localVideoUrl.startsWith('data:'))) {
+        downloadUrl = localVideoUrl;
+      } else {
+        downloadUrl = `/api/proxy-video?url=${encodeURIComponent(generatedVideoUrl)}`;
+      }
+
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Server returned proxy/direct download status code ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `veo-cinematic-${Date.now()}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+      
+      triggerNotification("Cinematic video transmission downloaded successfully to local drive.", "success");
+    } catch (err: any) {
+      console.error("Secure video download failure:", err);
+      triggerNotification("Direct download failed. Routing request via backup tab channel...", "error");
+      try {
+        const link = document.createElement('a');
+        link.href = localVideoUrl || generatedVideoUrl;
+        link.download = "veo-cinematic.mp4";
+        link.target = "_blank";
+        link.click();
+      } catch (fallbackErr) {
+        console.error("Direct fallback channel collapsed:", fallbackErr);
+      }
+    } finally {
+      setDownloadingVideo(false);
+    }
   };
 
   // --- Video Generation Functions ---
@@ -208,6 +343,14 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
           setGeneratingVideo(false);
           setVideoJob(null);
           triggerNotification("Cinematic video stream generated successfully!", "success");
+          if (onAddBRoll) {
+            const labelText = videoPrompt ? (videoPrompt.length > 40 ? videoPrompt.substring(0, 37) + '...' : videoPrompt) : 'Custom Forge Loop';
+            onAddBRoll({
+              id: `lab-${Date.now()}`,
+              url: statusData.videoUrl,
+              label: `Media Lab: ${labelText}`
+            });
+          }
         } else if (statusData.status === 'failed') {
           clearInterval(interval);
           throw new Error(statusData.error || "The Veo computation core suffered structural collapse.");
@@ -670,14 +813,96 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
                 </div>
               ) : generatedVideoUrl ? (
                 <div className="w-full space-y-4">
-                  <div className="border border-white/10 rounded-2xl overflow-hidden bg-black aspect-video relative group">
+                  <div className="border border-white/10 rounded-2xl overflow-hidden bg-black aspect-video relative group flex items-center justify-center">
+                    {(loadingVideoBlob || videoLoadState === 'loading') && videoLoadState !== 'error' ? (
+                      <div className="text-center p-6 space-y-3 z-10 absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-amber-400 animate-spin mx-auto animate-pulse" />
+                        <p className="text-xs font-mono text-amber-400/90 uppercase tracking-wide">Syncing neural video buffer...</p>
+                        <p className="text-[10px] font-mono text-starlight/40 uppercase">Mapping frame array dimensions & spectrum MIME type</p>
+                      </div>
+                    ) : null}
+
+                    {videoLoadState === 'error' && (
+                      <div className="absolute inset-0 z-20 bg-neutral-950 p-6 flex flex-col items-center justify-center text-center space-y-4">
+                        <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl shrink-0">
+                          <Activity className="w-8 h-8 animate-pulse text-red-500" />
+                        </div>
+                        <div className="space-y-1.5 max-w-sm">
+                          <p className="text-[10px] font-mono text-red-400 uppercase font-black tracking-widest leading-relaxed">COGNITIVE VIDEO CONVERGENCE FAIL</p>
+                          <p className="text-xs text-starlight/60 leading-relaxed font-sans">
+                            {videoErrorDetails || "Underlying video asset failed decoding or generated CORS mismatch."}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            console.log("Engaging direct bypass on play error...");
+                            setVideoLoadState('loading');
+                            setVideoErrorDetails("Attempting absolute direct media render stream...");
+                            if (generatedVideoUrl) {
+                              setLocalVideoUrl(generatedVideoUrl);
+                            }
+                          }}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-semibold font-mono text-[9px] uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                        >
+                          Bypass Proxy & Re-route Direct
+                        </button>
+                      </div>
+                    )}
+
                     <video
-                      src={generatedVideoUrl}
+                      key={localVideoUrl || generatedVideoUrl || 'no-video'}
+                      ref={videoRef}
                       controls
-                      autoPlay
                       loop
-                      className="w-full h-full object-contain"
-                    />
+                      crossOrigin="anonymous"
+                      {...({ referrerPolicy: 'no-referrer' } as any)}
+                      className={`w-full h-full object-contain ${videoLoadState === 'error' ? 'hidden' : 'block'}`}
+                      onLoadStart={() => {
+                        console.log("HTML5 Video tag started load.");
+                        setVideoLoadState('loading');
+                        setCanPlayReady(false);
+                      }}
+                      onLoadedData={() => {
+                        console.log("HTML5 Video first frame decoded successfully.");
+                      }}
+                      onCanPlay={(e) => {
+                        console.log("HTML5 Video ready signal received: play sequences unblocked.");
+                        setVideoLoadState('loaded');
+                        setCanPlayReady(true);
+                        
+                        const video = e.currentTarget;
+                        video.play().catch(playErr => {
+                          console.warn("Cybernetic auto-play on canplay throttled by user policy/browser permissions overlay:", playErr);
+                        });
+                      }}
+                      onError={(e) => {
+                        const err = e.currentTarget.error;
+                        let errStr = "An unknown error halted playback.";
+                        if (err) {
+                          switch (err.code) {
+                            case 1: errStr = "PROCESS_ABORTED: The media fetch was cancelled."; break;
+                            case 2: errStr = "NETWORK_ERROR: Cybernetic stream severed mid-download."; break;
+                            case 3: errStr = "DECODE_ERROR: Temporal frames corrupted or MIME conflict."; break;
+                            case 4: errStr = "SOURCE_NOT_SUPPORTED: The format cannot be computed by your matrix."; break;
+                          }
+                        }
+                        console.warn("Video render collapsed:", errStr);
+                        setVideoLoadState('error');
+                        setVideoErrorDetails(errStr);
+                        setCanPlayReady(false);
+                      }}
+                    >
+                      <source 
+                        src={localVideoUrl || generatedVideoUrl || undefined} 
+                        type={getVideoMimeType(localVideoUrl || generatedVideoUrl)}
+                        onError={(e) => {
+                          console.warn("Inner source element caught error during compilation.");
+                          setVideoLoadState('error');
+                          setVideoErrorDetails("Underlying network connection failed or stream mime-type is unrecognized.");
+                        }}
+                      />
+                      Your browser does not support the playback of these deep space video archives.
+                    </video>
                   </div>
                   <div className="flex justify-between items-center bg-white/[0.02] p-4 border border-white/5 rounded-xl">
                     <div className="overflow-hidden">
@@ -685,7 +910,7 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
                       <p className="text-[10px] font-sans text-starlight/60 truncate mt-0.5 mt-1 leading-relaxed">Prompt: "{videoPrompt}"</p>
                     </div>
                     <a
-                      href={generatedVideoUrl}
+                      href={localVideoUrl || generatedVideoUrl}
                       download="veo-cinematic.mp4"
                       className="p-3 bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-all cursor-pointer shadow-[0_0_15px_rgba(245,158,11,0.15)] shrink-0 flex items-center gap-2 text-xs font-sans font-bold"
                     >
@@ -762,15 +987,28 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme }) =
                 {/* Method B: Upload file */}
                 <div className="p-5 border border-white/5 bg-white/[0.01] rounded-2xl space-y-4">
                   <span className="text-[10px] font-mono text-starlight/40 uppercase tracking-widest font-bold block">METHOD 2: FILE UPLOAD TRANSCEIVER</span>
-                  <div className="border border-dashed border-white/10 hover:border-amber-500/30 rounded-xl p-6 text-center transition-all relative flex flex-col items-center justify-center bg-black/45">
+                  <div className={`border border-dashed rounded-xl p-6 text-center transition-all duration-300 relative flex flex-col items-center justify-center bg-black/45 ${
+                    isDragging 
+                      ? 'border-amber-500 bg-amber-500/5 shadow-[0_0_15px_rgba(245,158,11,0.1)] scale-[0.99]' 
+                      : 'border-white/10 hover:border-amber-500/30'
+                  }`}>
                     <input
                       type="file"
                       accept="audio/*"
-                      onChange={handleAudioUpload}
+                      onChange={(e) => {
+                        setIsDragging(false);
+                        handleAudioUpload(e);
+                      }}
+                      onDragOver={() => setIsDragging(true)}
+                      onDragEnter={() => setIsDragging(true)}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={() => setIsDragging(false)}
                       className="absolute inset-0 opacity-0 cursor-pointer"
                     />
-                    <Upload className="w-8 h-8 text-starlight/40 mb-3" />
-                    <p className="text-xs font-sans font-semibold">Deploy Audio Node File</p>
+                    <Upload className={`w-8 h-8 mb-3 transition-colors duration-300 ${isDragging ? 'text-amber-400 animate-bounce' : 'text-starlight/40'}`} />
+                    <p className={`text-xs font-sans font-semibold transition-colors duration-300 ${isDragging ? 'text-amber-300 font-bold' : ''}`}>
+                      {isDragging ? 'Drop acoustic node file here' : 'Deploy Audio Node File'}
+                    </p>
                     <p className="text-[9px] font-mono text-starlight/30 uppercase mt-1">Accepts WAV, MP3, M4A, WEBM (Max 25MB)</p>
                   </div>
                 </div>

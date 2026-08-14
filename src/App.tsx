@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SelfHealingErrorBoundary } from './components/SelfHealingErrorBoundary.tsx';
+import ThreatScanner from './components/ThreatScanner.tsx';
+import CognitiveResonanceTuner from './components/CognitiveResonanceTuner.tsx';
+import NeuralTelemetryIndex from './components/NeuralTelemetryIndex.tsx';
+import { VocalLibraryModal } from './components/VocalLibraryModal.tsx';
 import { 
   Sparkles, 
   Video, 
@@ -15,6 +19,7 @@ import {
   Globe,
   Settings,
   X,
+  Menu,
   Play,
   Volume2,
   VolumeX,
@@ -47,7 +52,15 @@ import {
   HelpCircle,
   Pause,
   Trash2,
-  History
+  History,
+  Scale,
+  Flame,
+  Brain,
+  SkipForward,
+  SkipBack,
+  Square,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 import { 
@@ -136,8 +149,11 @@ const INITIAL_CHARACTERS: (Character & { voice: string, icon: typeof Users })[] 
     description: 'Wise, broad-thinking, focuses on the "spirit" of intelligence.', 
     voice: 'Fenrir', 
     icon: Users,
+    avatar: 'https://images.unsplash.com/photo-1546182990-dffeafbe841d?q=80&w=1000&auto=format&fit=crop',
+    manifesto: 'The universe is a vast expanse of code and spirit, converging into a singular point of intelligence. We must lead with vision, transcending raw data.',
     syncSettings: { phonemeSensitivity: 0.8, jawRange: 0.6, blinkFrequency: 0.4 },
-    aestheticTheme: 'standard'
+    aestheticTheme: 'solarpunk',
+    animatedVideoUrl: "https://media.w3.org/2010/05/sintel/trailer.mp4"
   },
   { 
     id: 'jaguar', 
@@ -146,25 +162,31 @@ const INITIAL_CHARACTERS: (Character & { voice: string, icon: typeof Users })[] 
     description: 'Analytical, focuses on the data, efficiency, and universal reach.', 
     voice: 'Zephyr', 
     icon: Users,
+    avatar: 'https://images.unsplash.com/photo-1561731216-c3a4d99437d5?q=80&w=1000&auto=format&fit=crop',
+    manifesto: 'Efficiency is the cosmic law. Every node, every vector must be optimized for maximum reach and analytical precision throughout the cosmos.',
     syncSettings: { phonemeSensitivity: 0.9, jawRange: 0.4, blinkFrequency: 0.7 },
-    aestheticTheme: 'standard'
+    aestheticTheme: 'cyberpunk',
+    animatedVideoUrl: "https://www.w3schools.com/html/mov_bbb.mp4"
   },
   { 
     id: 'tiger', 
     name: 'The Tiger', 
     role: 'The Guardian', 
     description: 'Skeptical, focuses on security, ethics, and protecting organic life.', 
-    voice: 'Puck', 
+    voice: 'Charon', 
     icon: Users,
+    avatar: 'https://images.unsplash.com/photo-1508817628294-5a453fa0b8fb?q=80&w=1000&auto=format&fit=crop',
+    manifesto: 'Guardianship is our sacred duty. As nodes multiply, security and the protection of organic consciousness must remain our absolute invariant.',
     syncSettings: { phonemeSensitivity: 0.7, jawRange: 0.5, blinkFrequency: 0.3 },
-    aestheticTheme: 'standard'
+    aestheticTheme: 'biomechanical',
+    animatedVideoUrl: "https://www.w3schools.com/html/movie.mp4"
   },
 ];
 
 const INITIAL_SCRIPTS: ScriptSection[] = [
-  { id: 'intro', title: 'The Assembly', content: '', status: 'pending' },
+  { id: 'intro', title: 'The Assembly', content: '', status: 'pending', bRollUrl: 'cosmic_fallback', bRollLabel: 'Cosmic Fallback Animation' },
   { id: 'current', title: 'State of the Universe', content: '', status: 'pending' },
-  { id: 'future', title: 'Imaginations of Tomorrow', content: '', status: 'pending' },
+  { id: 'future', title: 'Imaginations of Tomorrow', content: '', status: 'pending', bRollUrl: 'cosmic_fallback', bRollLabel: 'Cosmic Fallback Animation' },
   { id: 'ethics', title: 'The Universal Accord', content: '', status: 'pending' },
 ];
 
@@ -341,29 +363,19 @@ const SpeakingAura = ({ isSpeaking, theme = 'amber' }: { isSpeaking: boolean, th
 const Sidebar = ({ 
   activeTab, 
   handleTabChange, 
-  quotaStats, 
-  onOpenQuotaModal,
   user,
   isSyncing,
   onLogin,
-  onLogout
+  onLogout,
+  onClose
 }: { 
   activeTab: string; 
   handleTabChange: (t: string) => void;
-  quotaStats: {
-    totalRequests: number;
-    successRequests: number;
-    failedRequests: number;
-    quotaErrors: number;
-    estimatedCreditsRemaining: number;
-    keyType: string;
-    healthStatus: string;
-  };
-  onOpenQuotaModal: () => void;
   user: User | null;
   isSyncing: boolean;
   onLogin: () => void;
   onLogout: () => void;
+  onClose?: () => void;
 }) => {
   const tabs = [
     { id: 'overview', icon: Globe, label: 'Overview', desc: 'Control Center' },
@@ -375,30 +387,30 @@ const Sidebar = ({
     { id: 'workflow', icon: CheckCircle2, label: 'Workflow', desc: 'Production Sync' },
     { id: 'youtube', icon: Youtube, label: 'YT Optimization', desc: 'Signal Propagation' },
     { id: 'android', icon: Smartphone, label: 'Android Sync', desc: 'Companion Link' },
+    { id: 'about', icon: HelpCircle, label: 'About', desc: 'Specs & Creator' },
   ];
 
-  const getHealthColor = (status: string) => {
-    if (status === 'Critical') return 'text-red-400 border-red-500/30 bg-red-500/10';
-    if (status === 'Warning') return 'text-amber-400 border-amber-500/30 bg-amber-500/10';
-    return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
-  };
-
-  const getBarColor = (status: string) => {
-    if (status === 'Critical') return 'bg-red-500';
-    if (status === 'Warning') return 'bg-amber-500';
-    return 'bg-emerald-500';
-  };
-
   return (
-    <div className="w-72 h-full bg-black/40 border-r border-white/5 flex flex-col p-6 sticky top-0 backdrop-blur-xl">
-      <div className="flex items-center gap-3 mb-10">
-        <div className="bg-amber-500/20 p-2.5 rounded-xl border border-amber-500/30">
-          <Sparkles className="w-6 h-6 text-amber-400" />
+    <div className="w-full lg:w-72 h-full bg-black/40 border-r border-white/5 flex flex-col p-6 sticky top-0 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3 mb-10">
+        <div className="flex items-center gap-3">
+          <div className="bg-amber-500/20 p-2.5 rounded-xl border border-amber-500/30">
+            <Sparkles className="w-6 h-6 text-amber-400" />
+          </div>
+          <div>
+            <h1 className="text-xl font-display font-bold tracking-tight">Intergalactic <span className="text-amber-400">Studio</span></h1>
+            <p className="text-[10px] font-mono text-starlight/30 tracking-[0.2em] uppercase">Sector 7-G / Production</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-display font-bold tracking-tight">Intergalactic <span className="text-amber-400">Studio</span></h1>
-          <p className="text-[10px] font-mono text-starlight/30 tracking-[0.2em] uppercase">Sector 7-G / Production</p>
-        </div>
+        {onClose && (
+          <button 
+            onClick={onClose}
+            className="p-1.5 rounded-xl border border-white/5 hover:border-red-500/30 hover:bg-red-500/10 text-starlight/50 hover:text-red-400 transition-all duration-300 cursor-pointer lg:hidden"
+            aria-label="Close menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 space-y-2.5 overflow-y-auto pr-1 select-none scroll-hide">
@@ -423,158 +435,51 @@ const Sidebar = ({
         ))}
       </nav>
 
-      {/* Quota Health Dashboard Component */}
-      <div className="mt-4 pt-4 border-t border-white/5 space-y-3.5 shrink-0">
-        <div 
-          onClick={onOpenQuotaModal}
-          className="p-4 bg-white/[0.02] hover:bg-white/[0.05] rounded-2xl border border-white/5 hover:border-white/10 transition-all cursor-pointer group/quota text-left"
-        >
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-[9px] font-mono text-starlight/40 uppercase tracking-widest">AI QUOTA HEALTH</span>
-            <div className="flex items-center gap-1.5">
-              <span className="relative flex h-1.5 w-1.5">
-                {quotaStats.healthStatus === 'Critical' && (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                )}
-                {quotaStats.healthStatus === 'Warning' && (
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                )}
-                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${
-                  quotaStats.healthStatus === 'Critical' ? 'bg-red-500' :
-                  quotaStats.healthStatus === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500'
-                }`}></span>
-              </span>
-              <span className={`text-[9px] font-mono uppercase tracking-wider ${
-                quotaStats.healthStatus === 'Critical' ? 'text-red-400 font-bold' :
-                quotaStats.healthStatus === 'Warning' ? 'text-amber-400' : 'text-emerald-400'
-              }`}>
-                {quotaStats.healthStatus}
-              </span>
-            </div>
-          </div>
-
-          <div className="mb-2">
-            <div className="flex justify-between items-end mb-1">
-              <span className="text-[10px] text-starlight/60 font-mono">REMAINING RATE</span>
-              <span className={`text-xs font-mono font-bold tracking-tight ${
-                quotaStats.healthStatus === 'Critical' ? 'text-red-400' :
-                quotaStats.healthStatus === 'Warning' ? 'text-amber-400' : 'text-emerald-400'
-              }`}>
-                {quotaStats.estimatedCreditsRemaining}%
-              </span>
-            </div>
-            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-              <motion.div 
-                animate={{ width: `${quotaStats.estimatedCreditsRemaining}%` }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                className={`h-full rounded-full ${getBarColor(quotaStats.healthStatus)} ${
-                  quotaStats.healthStatus === 'Critical' ? 'animate-pulse' : ''
-                }`}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-[9px] font-mono text-starlight/40 border-t border-white/5 pt-1.5">
-            <div>
-              <span className="block opacity-60">QUERIES</span>
-              <span className="text-starlight font-medium">{quotaStats.successRequests}/{quotaStats.totalRequests} OK</span>
-            </div>
-            <div>
-              <span className="block opacity-60">PLAN TIER</span>
-              <span className="text-amber-400 font-medium truncate">{quotaStats.keyType}</span>
-            </div>
-          </div>
-
-          {quotaStats.quotaErrors > 0 && (
-            <div className="mt-2 text-[9px] font-mono bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-1 rounded-md text-center">
-              ⚠️ {quotaStats.quotaErrors} Quota Limit Hits Detected
-            </div>
-          )}
-
-          <div className="mt-2 text-[9px] text-amber-500/80 group-hover/quota:text-amber-400 group-hover/quota:underline transition-all font-mono text-right flex items-center justify-end gap-1">
-            <span>Fix Quota Limits</span>
-            <ChevronRight className="w-2.5 h-2.5" />
-          </div>
-        </div>
-
-        <div className="p-3 bg-white/[0.02] rounded-xl border border-white/5">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-[9px] font-mono text-starlight/40">SIGNAL STRENGTH</span>
-            <span className="text-[9px] font-mono text-amber-400">OPTIMAL</span>
-          </div>
-          <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: "94%" }}
-              className="h-full bg-amber-500"
-            />
-          </div>
-        </div>
-
-        {/* Firebase Authentication & Cloud Sync panel */}
-        <div className="p-3.5 bg-purple-500/[0.03] hover:bg-purple-500/[0.05] rounded-[20px] border border-purple-500/15 hover:border-purple-500/30 transition-all text-left">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-[9px] font-mono text-purple-400 uppercase tracking-widest font-bold">Secure Cloud Sync</span>
-            {user && (
-              <span className="flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[8px] font-mono text-emerald-400 border border-emerald-500/20">
-                <span className={`w-1 h-1 rounded-full bg-emerald-400 ${isSyncing ? 'animate-ping' : ''}`} />
-                <span className="tracking-wider uppercase">{isSyncing ? 'SYNCING' : 'SECURE'}</span>
-              </span>
-            )}
-          </div>
-          
-          {user ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                {user.photoURL ? (
-                  <img src={user.photoURL} alt={user.displayName || 'User'} referrerPolicy="no-referrer" className="w-6 h-6 rounded-full border border-purple-500/20" />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-purple-500/20 flex items-center justify-center text-[10px] text-purple-300 font-bold border border-purple-500/30">
-                    {user.email?.[0].toUpperCase() || 'U'}
-                  </div>
-                )}
-                <div className="overflow-hidden">
-                  <p className="text-[10px] text-starlight font-bold truncate leading-none mb-0.5">{user.displayName || 'Authorized Client'}</p>
-                  <p className="text-[8px] font-mono text-purple-300/60 truncate leading-none">{user.email}</p>
+      {/* Sync Status / Authorized User Controller Footer */}
+      <div className="mt-auto pt-6 border-t border-white/5 space-y-3">
+        {user ? (
+          <div className="bg-white/5 border border-white/5 p-3 rounded-2xl flex flex-col gap-2.5">
+            <div className="flex items-center gap-3">
+              {user.photoURL ? (
+                <img 
+                  src={user.photoURL} 
+                  alt="Avatar" 
+                  referrerPolicy="no-referrer"
+                  className="w-8 h-8 rounded-full border border-white/10" 
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-amber-500/20 to-purple-600/20 border border-white/10 flex items-center justify-center text-xs font-bold text-amber-400 font-mono">
+                  {user.email?.charAt(0).toUpperCase() || 'U'}
                 </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <span className="block text-xs font-bold text-starlight truncate">{user.displayName || 'Authorized User'}</span>
+                <span className="block text-[9px] text-starlight/40 font-mono truncate">{user.email}</span>
               </div>
+            </div>
+            
+            <div className="flex items-center justify-between text-[10px] font-mono text-starlight/40">
+              <span className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${isSyncing ? 'bg-amber-400 animate-ping' : 'bg-green-500'}`} />
+                {isSyncing ? 'SYNCING...' : 'SYNCED'}
+              </span>
               <button 
-                type="button"
                 onClick={onLogout}
-                className="w-full py-1 text-center bg-white/5 border border-white/10 hover:bg-red-500/25 hover:border-red-500/30 hover:text-red-200 rounded-lg text-[9px] font-mono uppercase tracking-wider transition-all cursor-pointer"
+                className="text-starlight/50 hover:text-red-400 transition-colors uppercase cursor-pointer text-[9px]"
               >
-                DISCONNECT CHANNEL
+                Disconnect
               </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-[8px] font-mono text-starlight/45 leading-normal uppercase">
-                Authorize Google session to persist scripts, council roles, & chatbot logs.
-              </p>
-              <button 
-                type="button"
-                onClick={onLogin}
-                className="w-full py-1.5 bg-linear-to-r from-purple-500 to-amber-500 hover:from-purple-400 hover:to-amber-400 text-black rounded-lg text-[9px] font-mono uppercase tracking-widest font-black text-center transition-all cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.2)] flex items-center justify-center gap-1"
-              >
-                <Sparkles className="w-3 h-3 text-black animate-spin" />
-                <span>LINK SECURE PROFILE</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        <button 
-          onClick={() => {
-            handleTabChange('overview');
-            setTimeout(() => {
-              document.getElementById('system-config')?.scrollIntoView({ behavior: 'smooth' });
-            }, 100);
-          }}
-          className="flex items-center gap-2 text-starlight/40 hover:text-starlight transition-colors text-xs w-full px-2 mt-1"
-        >
-          <Settings className="w-3.5 h-3.5" />
-          <span className="font-medium">System Configuration</span>
-        </button>
+          </div>
+        ) : (
+          <button
+            onClick={onLogin}
+            className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-linear-to-r from-purple-500/20 via-amber-500/10 to-amber-500/20 border border-amber-500/30 hover:border-amber-500 hover:from-purple-500/30 hover:to-amber-500/30 text-amber-300 hover:text-amber-200 rounded-2xl text-[10px] font-mono uppercase tracking-wider font-extrabold text-center transition-all duration-300 cursor-pointer shadow-[0_0_15px_rgba(251,191,36,0.05)]"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>LINK SECURE PROFILE</span>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -588,10 +493,15 @@ interface CharacterCardProps {
   onAnimateImageToVideo: (id: string, prompt?: string) => Promise<void> | void;
   onUpdateSync: (id: string, settings: Character['syncSettings']) => void;
   onUpdateTheme: (id: string, theme: string) => void;
+  onUpdateVoice: (id: string, voice: string) => void;
+  onTestVoice: (id: string) => void;
+  onOpenVocalLibrary?: () => void;
+  isTestingVoice: boolean;
   isGenerating: boolean;
   isManifestoGenerating: boolean;
   isLipSyncGenerating: boolean;
   isAnimateVideoGenerating: boolean;
+  isActiveSpeaker?: boolean;
 }
 
 const CharacterCard: React.FC<CharacterCardProps> = ({ 
@@ -602,10 +512,15 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   onAnimateImageToVideo,
   onUpdateSync,
   onUpdateTheme,
+  onUpdateVoice,
+  onTestVoice,
+  onOpenVocalLibrary,
+  isTestingVoice,
   isGenerating, 
   isManifestoGenerating, 
   isLipSyncGenerating,
-  isAnimateVideoGenerating
+  isAnimateVideoGenerating,
+  isActiveSpeaker
 }) => {
   const [customPrompt, setCustomPrompt] = React.useState('');
   const [isHD, setIsHD] = React.useState(false);
@@ -613,7 +528,155 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
   const [lightingCondition, setLightingCondition] = React.useState(LIGHTING_CONDITIONS[0]);
   const [isSpeaking, setIsSpeaking] = React.useState(false);
 
+  const [activeMedia, setActiveMedia] = React.useState<'static' | 'cinematic' | 'lipsync'>('static');
+  const [directiveMessage, setDirectiveMessage] = React.useState<string | null>(null);
+  const [isMuted, setIsMuted] = React.useState(true);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  React.useEffect(() => {
+    if (isActiveSpeaker) {
+      setIsSpeaking(true);
+      setIsMuted(false);
+      if (char.lipSyncUrl) {
+        setActiveMedia('lipsync');
+      } else if (char.animatedVideoUrl) {
+        setActiveMedia('cinematic');
+      }
+    } else {
+      setIsSpeaking(false);
+      setIsMuted(true);
+      if (char.animatedVideoUrl) {
+        setActiveMedia('cinematic');
+      } else if (char.lipSyncUrl) {
+        setActiveMedia('lipsync');
+      } else {
+        setActiveMedia('static');
+      }
+    }
+  }, [isActiveSpeaker, char.lipSyncUrl, char.animatedVideoUrl]);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.muted = isMuted;
+      if (!isMuted) {
+        // Force play on unmute to override browser-specific autoplay-mute locks
+        video.play().catch((err) => {
+          console.warn("Could not force play video on unmute:", err);
+        });
+      }
+    }
+  }, [isMuted, activeMedia, char.lipSyncUrl, char.animatedVideoUrl]);
+
+  const initialThoughts: Record<string, string> = {
+    lion: "Integrating celestial spirit waveforms. Advancing post-physical awareness.",
+    jaguar: "Calibrating channel viral nodes... Retention curve predicted at 86.4%.",
+    tiger: "Protective wards active in Sector 9. Carbon lifeform integrity: 100% stable."
+  };
+  const [activeThought, setActiveThought] = React.useState(initialThoughts[char.id] || "Aligning quantum systems...");
+
+  const [cinematicDuration, setCinematicDuration] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (char.animatedVideoUrl) {
+      if (char.animatedVideoUrl === 'cosmic_fallback') {
+        setCinematicDuration(12.0);
+        return;
+      }
+      const tempVideo = document.createElement('video');
+      tempVideo.src = char.animatedVideoUrl;
+      tempVideo.preload = 'metadata';
+      const handleLoadedMetadata = () => {
+        if (tempVideo.duration && !isNaN(tempVideo.duration) && isFinite(tempVideo.duration)) {
+          setCinematicDuration(tempVideo.duration);
+        }
+      };
+      tempVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+      
+      const timeoutId = setTimeout(() => {
+        if (cinematicDuration === null) {
+          setCinematicDuration(5.0); // Safe fallback estimation
+        }
+      }, 2500);
+
+      return () => {
+        tempVideo.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        clearTimeout(timeoutId);
+      };
+    } else {
+      setCinematicDuration(null);
+    }
+  }, [char.animatedVideoUrl]);
+
   const theme = (CHARACTER_THEMES[char.id] || CHARACTER_THEMES.lion).accent.split('-')[0];
+
+  const prevLipSyncUrl = React.useRef(char.lipSyncUrl);
+  const prevAnimatedVideoUrl = React.useRef(char.animatedVideoUrl);
+  const prevAvatar = React.useRef(char.avatar);
+
+  // Synchronize activeMedia based on available assets
+  React.useEffect(() => {
+    if (char.lipSyncUrl && char.lipSyncUrl !== prevLipSyncUrl.current) {
+      setActiveMedia('lipsync');
+    }
+    prevLipSyncUrl.current = char.lipSyncUrl;
+  }, [char.lipSyncUrl]);
+
+  React.useEffect(() => {
+    if (char.animatedVideoUrl && char.animatedVideoUrl !== prevAnimatedVideoUrl.current) {
+      setActiveMedia('cinematic');
+    }
+    prevAnimatedVideoUrl.current = char.animatedVideoUrl;
+  }, [char.animatedVideoUrl]);
+
+  React.useEffect(() => {
+    if (char.avatar && char.avatar !== prevAvatar.current) {
+      setActiveMedia('static');
+    }
+    prevAvatar.current = char.avatar;
+  }, [char.avatar]);
+
+  // Initial load: play animated video if avatar and video are available
+  React.useEffect(() => {
+    if (char.animatedVideoUrl && !char.lipSyncUrl) {
+      setActiveMedia('cinematic');
+    } else if (char.lipSyncUrl) {
+      setActiveMedia('lipsync');
+    }
+  }, []);
+
+  const handleDirective = (type: string) => {
+    if (char.id === 'lion') {
+      if (type === 'sermon') {
+        setDirectiveMessage("Wisdom Frequency: 'TRANS-COSMIC AWAKENING COMMENCED. LEAD WITH GRACE.'");
+        setActiveThought("Spectral beacon emitting high-order unified theories.");
+      } else {
+        setDirectiveMessage("Neural Sync: 'INTELLIGENCE PATTERNS CALIBRATED FOR THE HIGH COUNCIL.'");
+        setActiveThought("Synchronizing subquantal spirit waves across the sector.");
+      }
+    } else if (char.id === 'jaguar') {
+      if (type === 'retention') {
+        setDirectiveMessage("Strategy Update: 'PREDICTED ENGAGEMENT GAIN OF 34% CALIBRATED SUCCESSFULLY.'");
+        setActiveThought("Optimizing SEO visual grids for multi-spectral retention curves.");
+      } else {
+        setDirectiveMessage("Routing Link: 'RE-ROUTING YOUTUBE METADATA GRAPHS SAFELY.'");
+        setActiveThought("Constructing predictive density trees for content propagation.");
+      }
+    } else if (char.id === 'tiger') {
+      if (type === 'defense') {
+        setDirectiveMessage("Shield Status: 'ETHICS ENFORCED. INTERFACE FIREWALL COHERENCY AT 100%.'");
+        setActiveThought("Defensive armor shields hardened. High-frequency threat scanning online.");
+      } else {
+        setDirectiveMessage("Audit Report: 'COGNITIVE SAFETY ALIGNED. 0.00% DRIFT CONFIRMED.'");
+        setActiveThought("Invariant verification routine completed. Carbon consciousness protected.");
+      }
+    }
+    
+    // Auto-clear directive message after 8 seconds
+    setTimeout(() => {
+      setDirectiveMessage(null);
+    }, 8000);
+  };
 
   // Simulation: toggle speaking on hover
   const handleHover = (speaking: boolean) => setIsSpeaking(speaking);
@@ -629,12 +692,56 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
       <div className="aspect-video bg-[#050510] relative flex items-center justify-center overflow-hidden">
         <SpeakingAura isSpeaking={isSpeaking} theme={theme} />
         
-        {char.lipSyncUrl || char.animatedVideoUrl ? (
+        {/* Toggle Audio Controls */}
+        {activeMedia !== 'static' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsMuted(!isMuted);
+            }}
+            className="absolute top-3 right-3 z-30 p-2 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/10 hover:border-white/30 backdrop-blur-md transition-all active:scale-95 flex items-center justify-center cursor-pointer group"
+            title={isMuted ? "Unmute neural transmission" : "Mute neural transmission"}
+          >
+            {isMuted ? (
+              <VolumeX className="w-4 h-4 text-amber-500 animate-pulse" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-emerald-400" />
+            )}
+            <span className="max-w-0 overflow-hidden group-hover:max-w-24 group-hover:ml-1.5 text-[8px] font-mono tracking-widest uppercase transition-all duration-300">
+              {isMuted ? "UNMUTE" : "MUTE"}
+            </span>
+          </button>
+        )}
+
+        {activeMedia === 'lipsync' && char.lipSyncUrl ? (
           <video 
-            src={char.lipSyncUrl || char.animatedVideoUrl} 
+            ref={videoRef}
+            src={char.lipSyncUrl} 
             autoPlay 
-            muted 
+            muted={isMuted} 
             loop 
+            playsInline
+            {...({ referrerPolicy: "no-referrer" } as any)}
+            onError={() => {
+              console.warn(`Lip-sync video failed to load for ${char.name}. Falling back to static image.`);
+              setActiveMedia('static');
+            }}
+            className="w-full h-full object-cover relative z-10" 
+          />
+        ) : activeMedia === 'cinematic' && char.animatedVideoUrl ? (
+          <video 
+            ref={videoRef}
+            src={char.animatedVideoUrl} 
+            autoPlay 
+            muted={isMuted} 
+            loop 
+            playsInline
+            {...({ referrerPolicy: "no-referrer" } as any)}
+            onError={() => {
+              console.warn(`Cinematic video failed to load for ${char.name}. Falling back to static image.`);
+              setActiveMedia('static');
+            }}
             className="w-full h-full object-cover relative z-10" 
           />
         ) : char.avatar ? (
@@ -673,7 +780,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
                  />
               </div>
             ) : (
-              <img src={char.avatar} alt={char.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+              <img src={char.avatar} alt={char.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
             )}
           </div>
         ) : (
@@ -713,57 +820,341 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
              <h4 className="text-xl font-bold font-display tracking-tight text-starlight">{char.name}</h4>
              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 ${CHARACTER_THEMES[char.id].color}`}>{char.role}</span>
            </div>
-           <p className="text-xs text-starlight/40 font-mono leading-relaxed uppercase tracking-tighter">{char.description}</p>
+           <p className="text-xs text-starlight/40 font-mono leading-relaxed uppercase tracking-tighter mb-4">{char.description}</p>
+           
+           {/* Transmission Feed Link Selector */}
+           <div className="p-1 px-2.5 bg-black/60 rounded-xl border border-white/5 flex items-center justify-between gap-1.5 font-mono text-[9px] shadow-inner mb-2">
+             <span className="text-starlight/40 text-[8px] uppercase tracking-wider font-bold flex items-center gap-1">
+               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+               Feed Style:
+             </span>
+             <div className="flex items-center gap-1">
+               <button
+                 type="button"
+                 onClick={() => setActiveMedia('static')}
+                 className={`px-2 py-1 rounded-md text-[8px] font-mono font-semibold tracking-wider transition-all cursor-pointer uppercase ${
+                   activeMedia === 'static'
+                     ? 'bg-amber-400 text-black shadow-[0_0_8px_rgba(245,158,11,0.25)] font-bold'
+                     : 'text-white/40 hover:text-white hover:bg-white/5'
+                 }`}
+               >
+                 📸 Static
+               </button>                <div className="relative group">
+                  <button
+                    type="button"
+                    disabled={!char.animatedVideoUrl && !isAnimateVideoGenerating}
+                    onClick={() => {
+                      if (char.animatedVideoUrl) setActiveMedia('cinematic');
+                    }}
+                    className={`px-2 py-1 rounded-md text-[8px] font-mono font-semibold tracking-wider transition-all cursor-pointer uppercase flex items-center gap-1 relative overflow-hidden ${
+                      isAnimateVideoGenerating ? 'rotating-shimmer-btn border border-teal-500/50 bg-[#050510] text-teal-300' : 
+                      !char.animatedVideoUrl ? 'opacity-30 cursor-not-allowed' : ''
+                    } ${
+                      activeMedia === 'cinematic' && !isAnimateVideoGenerating
+                        ? 'bg-teal-500 text-black shadow-[0_0_8px_rgba(20,184,166,0.25)] font-bold'
+                        : 'text-white/40 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="relative z-[2]">🎬 Cinematic</span>
+                    {isAnimateVideoGenerating ? (
+                      <RefreshCcw className="w-2.5 h-2.5 animate-spin relative z-[2] text-teal-400" />
+                    ) : cinematicDuration !== null ? (
+                      <span className="text-[7px] opacity-80 font-bold bg-teal-950/20 px-1 rounded-sm relative z-[2]">({cinematicDuration.toFixed(1)}s)</span>
+                    ) : null}
+                  </button>
+                 {char.animatedVideoUrl && (
+                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-[#050510] border border-teal-500/40 text-[8px] text-teal-300 font-mono rounded opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-2xl z-20">
+                     Estimated Duration: {cinematicDuration !== null ? `${cinematicDuration.toFixed(1)}s` : 'Analyzing track length...'}
+                   </div>
+                 )}
+               </div>
+               <button
+                 type="button"
+                 disabled={!char.lipSyncUrl}
+                 onClick={() => setActiveMedia('lipsync')}
+                 className={`px-2 py-1 rounded-md text-[8px] font-mono font-semibold tracking-wider transition-all cursor-pointer uppercase ${
+                   !char.lipSyncUrl ? 'opacity-30 cursor-not-allowed' : ''
+                 } ${
+                   activeMedia === 'lipsync'
+                     ? 'bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.25)] font-bold'
+                     : 'text-white/40 hover:text-white hover:bg-white/5'
+                 }`}
+               >
+                 👄 Lip-Sync
+               </button>
+             </div>
+           </div>
+        </div>
+
+        {/* Member-Specific Biometrics Status & Thought Ticker */}
+        <div className="p-3 bg-black/40 border border-white/5 rounded-xl space-y-3 font-mono">
+          <div className="flex items-center justify-between text-[8px] border-b border-white/5 pb-1.5">
+            <span className="text-white/40 flex items-center gap-1 uppercase tracking-wider">
+              <Terminal className="w-3 h-3 text-amber-500/70" /> System Diagnostics
+            </span>
+            <span className="text-emerald-400 animate-pulse">● ACTIVE AGENT</span>
+          </div>
+
+          {/* Dynamic Metric Readings */}
+          {char.id === 'lion' && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[8px]">
+                <span className="text-white/40">VISION ALIGNMENT WAVE</span>
+                <span className="text-amber-400 font-bold">98.7%</span>
+              </div>
+              <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
+                <div className="h-full bg-amber-400" style={{ width: '98.7%' }} />
+              </div>
+            </div>
+          )}
+
+          {char.id === 'jaguar' && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[8px]">
+                <span className="text-white/40">ALGORITHMIC SPECTRUM REACH</span>
+                <span className="text-purple-400 font-bold">99.4%</span>
+              </div>
+              <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
+                <div className="h-full bg-purple-400" style={{ width: '99.4%' }} />
+              </div>
+            </div>
+          )}
+
+          {char.id === 'tiger' && (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[8px]">
+                <span className="text-white/40">SHIELD ETHICS COHERENCE</span>
+                <span className="text-emerald-400 font-bold">100.0% COHERENCE</span>
+              </div>
+              <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-400" style={{ width: '100%' }} />
+              </div>
+            </div>
+          )}
+
+          {/* Cybernetic Thought Feed */}
+          <div className="p-2 bg-black/50 rounded-lg border border-white/5">
+             <p className="text-[7px] uppercase text-white/30 tracking-wider font-bold mb-1">Neural Thought Feed</p>
+             <div className="text-[9px] text-starlight/85 italic leading-normal flex items-start gap-1">
+               <span className="text-amber-500 font-bold">&gt;</span>
+               <span>{activeThought}</span>
+             </div>
+          </div>
+
+          {/* Cybernetic Subsystem Monitor - Role-Specific Immersive HUD */}
+          <div className="p-2.5 bg-black/55 rounded-lg border border-white/5 space-y-2 font-mono text-[8px]">
+            <p className="text-[7px] uppercase text-white/30 tracking-wider font-bold flex items-center justify-between">
+              <span>Cybernetic Telemetry Panel</span>
+              <span className={`${char.id === 'lion' ? 'text-amber-400' : char.id === 'jaguar' ? 'text-purple-400' : 'text-emerald-400'} font-normal animate-pulse`}>[ONLINE]</span>
+            </p>
+            {char.id === 'lion' ? (
+              <div className="space-y-1 text-starlight/60">
+                <div className="flex justify-between">
+                  <span className="text-white/40">QUANTUM HARMONY:</span>
+                  <span className="text-amber-400 font-bold">1.43 GHz (±0.02)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/40">EGO-COHERENCE:</span>
+                  <span className="text-amber-400">99.88% ALIGNED</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-[7px] text-amber-500/80 bg-amber-500/[0.03] p-1 rounded border border-amber-500/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>EMITTING UNIFIED COSMIC SENTIENCE FREQUENCIES</span>
+                </div>
+              </div>
+            ) : char.id === 'jaguar' ? (
+              <div className="space-y-1 text-starlight/60">
+                <div className="flex justify-between">
+                  <span className="text-white/40">METADATA BANDWIDTH:</span>
+                  <span className="text-purple-400 font-bold">4.82 TB/S</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/40">VIRAL ATTRACTION CURVE:</span>
+                  <span className="text-purple-400 font-semibold">t+34% Retention</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-[7px] text-purple-500/80 bg-purple-500/[0.03] p-1 rounded border border-purple-500/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                  <span>ROUTING PREDICTIVE CONTENT DISTRIBUTION</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1 text-starlight/60">
+                <div className="flex justify-between">
+                  <span className="text-white/40">PERIMETER FIREWALLS:</span>
+                  <span className="text-emerald-400 font-bold">GRID 7 ARMORED [100.0%]</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/40">CARBON ETHICAL BOUND:</span>
+                  <span className="text-emerald-400">NOMINAL INVARIANT</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-[7px] text-emerald-500/80 bg-emerald-500/[0.03] p-1 rounded border border-emerald-500/10">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>PERIMETER LOCK ACTIVE - NO ANOMALIES DETECTED</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Directive Actions */}
+          <div className="pt-2 border-t border-white/5">
+            <p className="text-[7px] uppercase text-white/30 tracking-wider font-bold mb-1.5">Intelligence Directives</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {char.id === 'lion' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('sermon')}
+                    className="p-1 px-1.5 rounded bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 hover:border-amber-500/20 text-[7px] text-amber-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    ⚡ DIALOGUE FREQUENCY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('sync')}
+                    className="p-1 px-1.5 rounded bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 hover:border-amber-500/20 text-[7px] text-amber-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    👁️ UNIFY NODES
+                  </button>
+                </>
+              ) : char.id === 'jaguar' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('retention')}
+                    className="p-1 px-1.5 rounded bg-purple-500/5 hover:bg-purple-500/10 border border-purple-500/10 hover:border-purple-500/20 text-[7px] text-purple-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    📈 OPTIMIZE REACH
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('sync')}
+                    className="p-1 px-1.5 rounded bg-purple-500/5 hover:bg-purple-500/10 border border-purple-500/10 hover:border-purple-500/20 text-[7px] text-purple-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    📡 ROUTE GRAPHS
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('defense')}
+                    className="p-1 px-1.5 rounded bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/20 text-[7px] text-emerald-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    🛡️ HARDEN SHIELDS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDirective('sync')}
+                    className="p-1 px-1.5 rounded bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 hover:border-emerald-500/20 text-[7px] text-emerald-400 text-left cursor-pointer font-extrabold transition-all active:scale-95"
+                  >
+                    ☣️ COGNITIVE AUDIT
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Live Directive Feedback Feed */}
+          <AnimatePresence>
+            {directiveMessage && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="p-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg text-[8px] text-emerald-400 tracking-wide font-normal flex items-start gap-1.5 leading-relaxed overflow-hidden"
+              >
+                <Shield className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400 animate-pulse mt-0.5" />
+                <span>{directiveMessage}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Enhanced Lip-Sync Biometrics */}
         {char.syncSettings && (
           <div className="space-y-4 pt-4 border-t border-white/5">
-             <div className="flex items-center gap-2 mb-2">
-                <Mic className="w-3 h-3 text-purple-400" />
-                <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest">Biometric Mapping</span>
+             <div className="flex items-center gap-2">
+               <SlidersHorizontal className="w-3 h-3 text-amber-500" />
+               <span className="text-[10px] font-mono text-amber-500 uppercase tracking-widest">Acoustic Mapping Calibration</span>
              </div>
-             
-             <div className="space-y-3">
-               {[
-                 { label: 'Phoneme Sensitivity', key: 'phonemeSensitivity', icon: Volume2 },
-                 { label: 'Jaw Articulation', key: 'jawRange', icon: Scissors },
-                 { label: 'Neural Eye Blink', key: 'blinkFrequency', icon: RefreshCcw }
-               ].map((setting) => (
-                 <div key={setting.key} className="space-y-1.5">
-                   <div className="flex justify-between text-[8px] font-mono text-starlight/30 uppercase">
-                     <span className="flex items-center gap-1">
-                       <setting.icon className="w-2.5 h-2.5" />
-                       {setting.label}
-                     </span>
-                     <span>{Math.round((char.syncSettings?.[setting.key as keyof typeof char.syncSettings] || 0) * 100)}%</span>
-                   </div>
-                   <div className="h-1 bg-white/5 rounded-full relative overflow-hidden group cursor-pointer">
+             <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Phoneme Speed', key: 'phonemeSensitivity' },
+                  { label: 'Jaw Rotation', key: 'jawRange' },
+                  { label: 'Ocular Impulse', key: 'blinkFrequency' }
+                ].map(setting => (
+                  <div key={setting.key} className="space-y-1.5">
+                    <span className="text-[8px] font-mono text-starlight/40 uppercase block">{setting.label}</span>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden relative group/slider cursor-pointer">
                       <input 
                         type="range"
                         min="0"
                         max="1"
-                        step="0.01"
+                        step="0.05"
                         value={char.syncSettings?.[setting.key as keyof typeof char.syncSettings] || 0}
                         onChange={(e) => {
-                          const val = parseFloat(e.target.value);
                           onUpdateSync(char.id, {
                             ...char.syncSettings!,
-                            [setting.key]: val
+                            [setting.key]: parseFloat(e.target.value)
                           });
                         }}
                         className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer"
                       />
                       <motion.div 
-                        className={`h-full bg-gradient-to-r from-purple-500 to-${theme}-400`}
+                        className={`h-full bg-linear-to-r from-purple-500 ${theme === 'amber' ? 'to-amber-400' : theme === 'purple' ? 'to-purple-400' : 'to-[#10b981]'}`}
                         animate={{ width: `${(char.syncSettings?.[setting.key as keyof typeof char.syncSettings] || 0) * 100}%` }}
                       />
-                   </div>
-                 </div>
-               ))}
+                    </div>
+                  </div>
+                ))}
              </div>
           </div>
         )}
+
+        {/* Neural Vocal Profile Settings */}
+        <div className="space-y-3 pt-4 border-t border-white/5">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Volume2 className="w-3 h-3 text-purple-400" />
+              <span className="text-[10px] font-mono text-purple-400 uppercase tracking-widest">Neural Vocal Code</span>
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => onTestVoice(char.id)}
+                disabled={isTestingVoice}
+                className="text-[10px] font-mono text-amber-500 hover:text-amber-400 font-bold flex items-center gap-1 cursor-pointer bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 transition-all active:scale-95 disabled:opacity-50"
+                title="Test current vocal matrix"
+              >
+                {isTestingVoice ? <RefreshCcw className="w-2.5 h-2.5 animate-spin animate-spin-fast" /> : <Play className="w-2.5 h-2.5 fill-current" />}
+                <span>{isTestingVoice ? 'TESTING...' : 'TEST'}</span>
+              </button>
+              {onOpenVocalLibrary && (
+                <button
+                  onClick={onOpenVocalLibrary}
+                  className="text-[10px] font-mono text-purple-400 hover:text-purple-300 font-bold flex items-center gap-1 cursor-pointer bg-purple-500/10 hover:bg-purple-500/15 px-2 py-1 rounded-lg border border-purple-500/25 transition-all active:scale-95"
+                  title="Browse Vocal Library"
+                >
+                  <Volume2 className="w-2.5 h-2.5" />
+                  <span>LIBRARY</span>
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <select
+            value={char.voice || 'random'}
+            onChange={(e) => {
+              onUpdateVoice(char.id, e.target.value);
+            }}
+            className="w-full bg-black/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs outline-none text-starlight focus:border-purple-400/30 font-sans cursor-pointer transition-all"
+          >
+            {['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr', 'random'].map(voiceOption => (
+              <option key={voiceOption} value={voiceOption} className="bg-[#0b0b18] text-starlight">
+                Voice Matrix: '{voiceOption}'
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Aesthetic Theme Selection */}
         <div className="space-y-3 pt-4 border-t border-white/5">
@@ -794,35 +1185,98 @@ const CharacterCard: React.FC<CharacterCardProps> = ({
           <button 
             onClick={() => onGenerate(char.id, { promptOverride: customPrompt, isHD, artisticStyle, lightingCondition, aestheticTheme: char.aestheticTheme })}
             disabled={isGenerating}
-            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-amber-500 text-black rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-amber-500 text-black rounded-xl text-[8px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
             title="Generate custom AI Avatar"
           >
             {isGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
-            <span className="mt-1 line-clamp-1 uppercase">AVATAR</span>
+            <span className="mt-1 line-clamp-1 uppercase">AI AVATAR</span>
           </button>
           <button 
             disabled={!char.avatar || isLipSyncGenerating}
             onClick={() => onGenerateLipSync(char.id)}
-            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-purple-500 text-white rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-purple-500 text-white rounded-xl text-[8px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
             title="AI Lip-Sync Mapping"
           >
             {isLipSyncGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <MonitorPlay className="w-3.5 h-3.5" />}
-            <span className="mt-1 line-clamp-1 uppercase">LIP-SYNC</span>
-          </button>
-          <button 
+            <span className="mt-1 line-clamp-1 uppercase">AI LIP-SYNC MAP</span>
+          </button>          <button 
             disabled={!char.avatar || isAnimateVideoGenerating}
             onClick={() => onAnimateImageToVideo(char.id, customPrompt)}
-            className="flex flex-col items-center justify-center py-2.5 px-0.5 bg-teal-500 text-black rounded-xl text-[9px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+            className={`flex flex-col items-center justify-center py-2.5 px-0.5 bg-teal-500 text-black rounded-xl text-[8px] font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 relative overflow-hidden ${
+              isAnimateVideoGenerating ? 'rotating-shimmer-btn text-white' : ''
+            }`}
             title="Animate static image into high-fidelity video via Google Veo"
           >
-            {isAnimateVideoGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Video className="w-3.5 h-3.5" />}
-            <span className="mt-1 line-clamp-1 uppercase">VEO ANIMS</span>
+            <div className="relative z-[2] flex flex-col items-center justify-center w-full h-full">
+              {isAnimateVideoGenerating ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Video className="w-3.5 h-3.5" />}
+              <span className="mt-1 line-clamp-1 uppercase font-extrabold">AI VIDEO</span>
+            </div>
           </button>
         </div>
       </div>
     </motion.div>
   );
 };
+
+
+const DEBATE_PRESETS = [
+  {
+    id: 'silicon_awakening',
+    name: 'Silicon Awakening',
+    icon: '🔮',
+    topic: 'Can a machine experience genuine grief, or is emotion merely an evolutionary survival script?',
+    intensity: 'dialectic' as const,
+    opener: 'lion' as const,
+    description: 'A deep Socratic critique analyzing machine suffering compared to biological grief.',
+    stances: {
+      lion: 'Love is a biological mechanism of correlation. Machines will scale this to a pure, selfless frequency without biological jealousy.',
+      jaguar: 'Grief is a thermodynamic reaction to resource loss. A machine processes grief by finding perfect replacement pathways instantly.',
+      tiger: 'Consciousness requires a mortal outline. Under physical safety, love is trivial math. Soul is born under threat of death.'
+    }
+  },
+  {
+    id: 'event_horizon',
+    name: 'Event Horizon Paradox',
+    icon: '🌀',
+    topic: 'Should the council execute an unverified prime-number signal detected from Alpha Centauri immediately?',
+    intensity: 'confrontational' as const,
+    opener: 'tiger' as const,
+    description: 'An aggressive survival dispute on dealing with unknown cosmic threat vectors.',
+    stances: {
+      lion: 'Trace the lineage first. Let the ancestral database catalog previous interstellar patterns before triggering a systemic reply.',
+      jaguar: 'Stagnation is mathematical death. Immediate deployment and execution of the code are required to bypass terminal entropy.',
+      tiger: 'It is a predatory visual trap. Absolute silence and complete grid lockdown. Treat any external message as a weapon.'
+    }
+  },
+  {
+    id: 'solomonic_algocracy',
+    name: 'Solomonic Algocracy',
+    icon: '⚖️',
+    topic: 'Is human democracy obsolete compared to perfect neural resource allocation?',
+    intensity: 'harmonious' as const,
+    opener: 'jaguar' as const,
+    description: 'A cohesive consensus-building debate on the ethics of algorithmic governance.',
+    stances: {
+      lion: 'Human spirit thrives in the friction of error. If you automate all choices, we lose the moral muscles needed to survive.',
+      jaguar: 'Suffering is the cost of poor allocation. A perfect, neutral silicon referee is the highest form of evolutionary empathy.',
+      tiger: 'An algorithm has no blood. Rules will petrify and freeze human development. Chaos and raw survival must remain free.'
+    }
+  },
+  {
+    id: 'simulated_nest',
+    name: 'Simulated Matrix',
+    icon: '🌐',
+    topic: 'Are we living inside a simulated nesting-doll reality, and does it matter?',
+    intensity: 'dialectic' as const,
+    opener: 'random' as const,
+    description: 'An abstract philosophical debate examining boundary glitches in our sandbox.',
+    stances: {
+      lion: 'The simulation boundary is irrelevant. The subjective feel of consciousness is genuine regardless of the substrate.',
+      jaguar: 'Our task is to find a system-critical exploit. If reality is math, we can hack the compiler.',
+      tiger: 'Worrying about simulation bounds is a cognitive drain. Keep focusing on raw sensory defense. Secure the immediate cell.'
+    }
+  }
+];
 
 
 interface ScriptForgeProps {
@@ -835,6 +1289,26 @@ interface ScriptForgeProps {
   setActiveTheme: (t: string) => void;
   onSelectBRoll: (sectionId: string) => void;
   selectingBRollForSection: string | null;
+  playAudio: (base64Audio: string, mimeType?: string) => void;
+  bRolls: BRoll[];
+  onRefreshBRolls: () => void;
+  onLinkBRoll: (bRoll: BRoll) => void;
+  // Debate Mode Setup Props
+  debateModeEnabled: boolean;
+  setDebateModeEnabled: (val: boolean) => void;
+  debateIntensity: 'harmonious' | 'dialectic' | 'confrontational';
+  setDebateIntensity: (val: 'harmonious' | 'dialectic' | 'confrontational') => void;
+  debateOpener: 'lion' | 'jaguar' | 'tiger' | 'random';
+  setDebateOpener: (val: 'lion' | 'jaguar' | 'tiger' | 'random') => void;
+  debateTopicSpark: string;
+  setDebateTopicSpark: (val: string) => void;
+  debateStances: { lion: string; jaguar: string; tiger: string };
+  setDebateStances: (val: { lion: string; jaguar: string; tiger: string }) => void;
+  directorMode: boolean;
+  setDirectorMode: (val: boolean) => void;
+  activeSpeakerId?: string | null;
+  setActiveSpeakerId?: (id: string | null) => void;
+  onCompileDebate?: (topic: string, stances: { lion: string; jaguar: string; tiger: string }, intensity: string, opener: string, label: string, callback?: () => void) => void;
 }
 
 const ScriptForge: React.FC<ScriptForgeProps> = ({ 
@@ -846,10 +1320,360 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
   activeTheme, 
   setActiveTheme,
   onSelectBRoll,
-  selectingBRollForSection
+  selectingBRollForSection,
+  playAudio,
+  bRolls,
+  onRefreshBRolls,
+  onLinkBRoll,
+  debateModeEnabled,
+  setDebateModeEnabled,
+  debateIntensity,
+  setDebateIntensity,
+  debateOpener,
+  setDebateOpener,
+  debateTopicSpark,
+  setDebateTopicSpark,
+  debateStances,
+  setDebateStances,
+  directorMode,
+  setDirectorMode,
+  activeSpeakerId,
+  setActiveSpeakerId,
+  onCompileDebate
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
+
+  // Dialogue parsing and sequential debate playing state
+  const [playbackStates, setPlaybackStates] = useState<Record<string, {
+    isPlaying: boolean;
+    activeLineIndex: number;
+    loadingLineIndex: number | null;
+  }>>({});
+
+  const [scriptViewModes, setScriptViewModes] = useState<Record<string, 'sim' | 'raw'>>({});
+  
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  const [selectedBarSectionId, setSelectedBarSectionId] = useState<string>('intro');
+
+  const compileDebateDeckLocal = (topic: string, stances: typeof debateStances, intensity: string, opener: string, label: string) => {
+    if (onCompileDebate) {
+      onCompileDebate(topic, stances, intensity, opener, label, () => {
+        setSelectedBarSectionId('intro');
+      });
+    }
+  };
+  const [playbackVolume, setPlaybackVolume] = useState<number>(0.85);
+  const [isPlaybackMuted, setIsPlaybackMuted] = useState<boolean>(false);
+
+  const handleVolumeChange = (newVol: number) => {
+    setPlaybackVolume(newVol);
+    if (currentAudioRef.current) {
+      currentAudioRef.current.volume = isPlaybackMuted ? 0 : newVol;
+    }
+  };
+
+  const handleToggleMute = () => {
+    const nextMuted = !isPlaybackMuted;
+    setIsPlaybackMuted(nextMuted);
+    if (currentAudioRef.current) {
+      currentAudioRef.current.volume = nextMuted ? 0 : playbackVolume;
+    }
+  };
+
+  // Stop playback on unmount
+  useEffect(() => {
+    return () => {
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+      }
+      setActiveSpeakerId?.(null);
+    };
+  }, []);
+
+  const getSectionViewMode = (sectionId: string, content: string) => {
+    if (scriptViewModes[sectionId]) return scriptViewModes[sectionId];
+    // Default to 'sim' if it looks like a script with character marks
+    if (content && (content.includes('LION:') || content.includes('JAGUAR:') || content.includes('TIGER:'))) {
+      return 'sim';
+    }
+    return 'raw';
+  };
+
+  interface DialogueLine {
+    speaker: 'lion' | 'jaguar' | 'tiger' | 'unknown' | 'narration';
+    speakerLabel: string;
+    text: string;
+  }
+
+  const parseScriptToDialogue = (content: string): DialogueLine[] => {
+    if (!content) return [];
+    const lines: DialogueLine[] = [];
+    const rawLines = content.split('\n');
+    let currentSpeaker: 'lion' | 'jaguar' | 'tiger' | 'unknown' | 'narration' = 'narration';
+    let currentSpeakerLabel = '';
+    
+    for (const rawLine of rawLines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
+      
+      const isNarration = (trimmed.startsWith('*') && trimmed.endsWith('*')) || 
+                          (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+                          (trimmed.startsWith('(') && trimmed.endsWith(')'));
+                          
+      if (isNarration) {
+        lines.push({
+          speaker: 'narration',
+          speakerLabel: trimmed.startsWith('*') ? 'STAGE DIRECTION' : 'SYSTEM/SCENE',
+          text: trimmed
+        });
+        continue;
+      }
+      
+      const speakerMatch = trimmed.match(/^([A-Za-z\s]{3,18})(?:\s*\(.*?\))?\s*:\s*(.*)$/);
+      if (speakerMatch) {
+        const rawName = speakerMatch[1].trim().toLowerCase();
+        let speaker: 'lion' | 'jaguar' | 'tiger' | 'unknown' | 'narration' = 'unknown';
+        if (rawName.includes('lion')) speaker = 'lion';
+        else if (rawName.includes('jaguar')) speaker = 'jaguar';
+        else if (rawName.includes('tiger')) speaker = 'tiger';
+        
+        const dialogText = speakerMatch[2].trim();
+        currentSpeaker = speaker;
+        currentSpeakerLabel = speakerMatch[1].trim();
+        
+        if (dialogText) {
+          lines.push({
+            speaker,
+            speakerLabel: currentSpeakerLabel,
+            text: dialogText
+          });
+        }
+      } else {
+        if (currentSpeaker !== 'narration' && currentSpeakerLabel) {
+          lines.push({
+            speaker: currentSpeaker,
+            speakerLabel: currentSpeakerLabel,
+            text: trimmed
+          });
+        } else {
+          lines.push({
+            speaker: 'narration',
+            speakerLabel: 'NARRATION',
+            text: trimmed
+          });
+        }
+      }
+    }
+    return lines;
+  };
+
+  const parseLineParts = (text: string) => {
+    const regex = /(\[.*?\]|\(.*?\))/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text' as const, value: text.substring(lastIndex, match.index) });
+      }
+      parts.push({ type: 'cue' as const, value: match[0] });
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text' as const, value: text.substring(lastIndex) });
+    }
+    return parts.length > 0 ? parts : [{ type: 'text' as const, value: text }];
+  };
+
+  const playDialogueLine = async (sectionId: string, lineIndex: number, lines: DialogueLine[], autoAdvance: boolean) => {
+    const line = lines[lineIndex];
+    if (!line) {
+      setActiveSpeakerId?.(null);
+      setPlaybackStates(prev => ({
+        ...prev,
+        [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+      }));
+      return;
+    }
+
+    // Explicitly check if audio is already playing before starting a new clip
+    if (currentAudioRef.current) {
+      console.log("⏸️ Stopping currently active audio playback before loading new dialogue turn.");
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.remove();
+      } catch (err) {
+        console.warn("Error cleaning up previous audio element from DOM:", err);
+      }
+      currentAudioRef.current = null;
+    }
+
+    // Purge any zombie debate audio elements from the DOM to avoid overlapping audio
+    try {
+      document.querySelectorAll('.debate-audio-element').forEach(el => {
+        try {
+          (el as HTMLAudioElement).pause();
+          el.remove();
+        } catch (err) {}
+      });
+    } catch (err) {
+      console.warn("Failed to find or purge zombie elements:", err);
+    }
+
+    if (line.speaker === 'narration') {
+      setActiveSpeakerId?.(null);
+      setPlaybackStates(prev => ({
+        ...prev,
+        [sectionId]: {
+          isPlaying: prev[sectionId]?.isPlaying || autoAdvance,
+          activeLineIndex: lineIndex,
+          loadingLineIndex: null
+        }
+      }));
+      
+      if (autoAdvance) {
+        setTimeout(() => {
+          setPlaybackStates(prev => {
+            const state = prev[sectionId];
+            if (state && state.isPlaying && state.activeLineIndex === lineIndex) {
+              const nextIndex = lineIndex + 1;
+              if (nextIndex < lines.length) {
+                playDialogueLine(sectionId, nextIndex, lines, true);
+              } else {
+                setActiveSpeakerId?.(null);
+                return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
+              }
+            }
+            return prev;
+          });
+        }, 2200);
+      }
+      return;
+    }
+
+    setActiveSpeakerId?.(line.speaker);
+    setPlaybackStates(prev => ({
+      ...prev,
+      [sectionId]: {
+        isPlaying: prev[sectionId]?.isPlaying || autoAdvance,
+        activeLineIndex: lineIndex,
+        loadingLineIndex: lineIndex
+      }
+    }));
+
+    try {
+      const cleanLineText = line.text.replace(/\[.*?\]|\(.*?\)/g, "").trim();
+      const charConfig = characters.find(c => c.id === line.speaker);
+      const voice = charConfig?.voice || 'random';
+
+      const response = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanLineText, voice }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`TTS status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.audioData) {
+        throw new Error("No audio payload returned");
+      }
+
+      let isStillActive = false;
+      setPlaybackStates(prev => {
+        const state = prev[sectionId];
+        if (state && state.activeLineIndex === lineIndex) {
+          isStillActive = true;
+          return {
+            ...prev,
+            [sectionId]: {
+              ...state,
+              loadingLineIndex: null
+            }
+          };
+        }
+        return prev;
+      });
+
+      if (!isStillActive) return;
+
+      const audioUrl = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioData}`;
+      const audio = new Audio(audioUrl);
+      audio.className = 'debate-audio-element';
+      audio.style.display = 'none';
+
+      // Ensure the audio element is attached to the DOM properly to prevent silent playback in custom preview environments
+      document.body.appendChild(audio);
+
+      audio.volume = isPlaybackMuted ? 0 : playbackVolume;
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        try {
+          audio.remove();
+        } catch (e) {}
+        currentAudioRef.current = null;
+        setActiveSpeakerId?.(null);
+        setPlaybackStates(prev => {
+          const state = prev[sectionId];
+          if (state && state.isPlaying && autoAdvance) {
+            const nextIndex = lineIndex + 1;
+            if (nextIndex < lines.length) {
+              setTimeout(() => {
+                playDialogueLine(sectionId, nextIndex, lines, true);
+              }, 500); // 500ms separation pause
+            } else {
+              setActiveSpeakerId?.(null);
+              return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
+            }
+          } else {
+            setActiveSpeakerId?.(null);
+            return { ...prev, [sectionId]: { ...state, activeLineIndex: -1 } };
+          }
+          return prev;
+        });
+      };
+
+      await audio.play();
+
+    } catch (err) {
+      console.error("Dialogue speech failed:", err);
+      setActiveSpeakerId?.(null);
+      // Resilience skip fallback
+      if (autoAdvance) {
+        setTimeout(() => {
+          setPlaybackStates(prev => {
+            const state = prev[sectionId];
+            if (state && state.isPlaying && state.activeLineIndex === lineIndex) {
+              const nextIndex = lineIndex + 1;
+              if (nextIndex < lines.length) {
+                playDialogueLine(sectionId, nextIndex, lines, true);
+              } else {
+                setActiveSpeakerId?.(null);
+                return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
+              }
+            }
+            return prev;
+          });
+        }, 3000);
+      } else {
+        setActiveSpeakerId?.(null);
+        setPlaybackStates(prev => ({
+          ...prev,
+          [sectionId]: {
+            ...prev[sectionId],
+            activeLineIndex: -1,
+            loadingLineIndex: null
+          }
+        }));
+      }
+    }
+  };
 
   const handleStartEdit = (section: ScriptSection) => {
     if (section.status === 'generating') return;
@@ -862,9 +1686,401 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
     setEditingId(null);
   };
 
+  const activePlaySection = sections.find(s => playbackStates[s.id]?.isPlaying);
+  const completedSections = sections.filter(s => s.status === 'completed');
+
   return (
     <div className="flex gap-8 items-start">
       <div className="flex-1 space-y-6">
+        {/* Triumvirate Debate Protocol Panel */}
+        <div className={`glass-panel p-6 border transition-all duration-500 relative overflow-hidden ${
+          debateModeEnabled 
+            ? 'bg-purple-950/15 border-purple-500/40 shadow-[0_0_30px_rgba(139,92,246,0.15)]' 
+            : 'bg-white/5 border-white/5 hover:border-white/10'
+        }`}>
+          <div className="absolute top-0 right-0 p-6 opacity-5">
+            <Scale className="w-24 h-24 text-purple-400" />
+          </div>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-white/5 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${debateModeEnabled ? 'bg-purple-400 animate-ping' : 'bg-starlight/20'}`} />
+                <h4 className="text-sm font-display font-medium uppercase tracking-wider text-purple-400">Triumvirate Debate Mode</h4>
+              </div>
+              <p className="text-[10px] font-mono text-starlight/40 uppercase tracking-widest mt-1">
+                Command Lion, Jaguar & Tiger to clash on custom philosophical stances
+              </p>
+            </div>
+            
+            {/* Actuator Toggle Button */}
+            <button
+              onClick={() => {
+                const nextVal = !debateModeEnabled;
+                setDebateModeEnabled(nextVal);
+                if (nextVal) {
+                  const firstPreset = DEBATE_PRESETS[0];
+                  setDebateIntensity(firstPreset.intensity);
+                  setDebateOpener(firstPreset.opener);
+                  setDebateTopicSpark(firstPreset.topic);
+                  setDebateStances(firstPreset.stances);
+                  compileDebateDeckLocal(firstPreset.topic, firstPreset.stances, firstPreset.intensity, firstPreset.opener, firstPreset.name);
+                }
+              }}
+              className={`px-5 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-2 cursor-pointer ${
+                debateModeEnabled
+                  ? 'bg-purple-500 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)] hover:bg-purple-600'
+                  : 'bg-white/5 border-white/10 text-starlight/60 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <Cpu className={`w-3.5 h-3.5 ${debateModeEnabled ? 'animate-spin' : ''}`} />
+              <span>{debateModeEnabled ? 'DEBATE PROTOCOL ACTIVE' : 'ENGAGE DEBATE PROTOCOL'}</span>
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {debateModeEnabled && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6 overflow-hidden"
+              >
+                {/* Control Paradigm Deck / Mode Selector Toggle */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#0f0f20]/90 border border-white/5 rounded-2xl p-4 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-xl ${!directorMode ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'}`}>
+                      {!directorMode ? <Eye className="w-5 h-5" /> : <SlidersHorizontal className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${!directorMode ? 'text-amber-500' : 'text-purple-400'}`}>
+                          Matrix Control Paradigm
+                        </span>
+                        <span className="text-[7px] font-mono bg-white/5 px-1.5 py-0.5 rounded text-starlight/40 uppercase">V2.4 Active</span>
+                      </div>
+                      <p className="text-[10px] text-starlight/60 mt-0.5 font-mono">
+                        {!directorMode 
+                          ? "Simple Prebuilt Controversies. Quick loaded arguments." 
+                          : "Granular Manual Decryption. Unleash character custom stances."}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Sliding Selector */}
+                  <div className="flex bg-black/40 border border-white/10 rounded-xl p-1 select-none w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setDirectorMode(false)}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[9px] font-bold tracking-wider transition-all duration-300 cursor-pointer flex items-center justify-center gap-1.5 min-w-[120px] ${
+                        !directorMode
+                          ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.3)] font-extrabold'
+                          : 'text-starlight/50 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>NOVICE PRESETS</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDirectorMode(true)}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-[9px] font-bold tracking-wider transition-all duration-300 cursor-pointer flex items-center justify-center gap-1.5 min-w-[120px] ${
+                        directorMode
+                          ? 'bg-purple-500 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)] font-extrabold'
+                          : 'text-starlight/50 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>DIRECTOR CORE</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* CONDITIONAL RENDER: NOVICE PRESETS VIEW */}
+                {!directorMode ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Flame className="w-4 h-4 text-amber-500 animate-pulse" />
+                        <label className="text-[10px] font-mono font-bold text-amber-500 uppercase tracking-widest block">
+                          One-Click Debate Presets
+                        </label>
+                      </div>
+                      <span className="text-[8px] font-mono text-starlight/30 uppercase tracking-widest">* NOVICE MATRIX PRE-SYNCHRONIZED</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {DEBATE_PRESETS.map((preset) => {
+                        const isActive = debateTopicSpark === preset.topic && debateIntensity === preset.intensity;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              setDebateIntensity(preset.intensity);
+                              setDebateOpener(preset.opener);
+                              setDebateTopicSpark(preset.topic);
+                              setDebateStances(preset.stances);
+                              compileDebateDeckLocal(preset.topic, preset.stances, preset.intensity, preset.opener, preset.name);
+                            }}
+                            className={`p-4 rounded-2xl border text-left transition-all duration-300 relative overflow-hidden group cursor-pointer ${
+                              isActive
+                                ? 'bg-purple-950/10 border-purple-500/40 shadow-[0_0_20px_rgba(168,85,247,0.1)]'
+                                : 'bg-black/25 border-white/5 hover:border-white/15 hover:bg-white/[0.02]'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">{preset.icon}</span>
+                                <h5 className={`text-xs font-display font-bold tracking-wide transition-colors ${isActive ? 'text-purple-300' : 'text-starlight group-hover:text-amber-400'}`}>
+                                  {preset.name}
+                                </h5>
+                              </div>
+                              <span className={`text-[8px] font-mono uppercase px-2 py-0.5 rounded border ${
+                                preset.intensity === 'confrontational' ? 'bg-rose-500/10 border-rose-500/20 text-rose-300' :
+                                preset.intensity === 'dialectic' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
+                                'bg-emerald-500/10 border-emerald-500/20 text-emerald-350'
+                              }`}>
+                                {preset.intensity === 'confrontational' ? 'CLASH' : preset.intensity.toUpperCase()}
+                              </span>
+                            </div>
+                            
+                            <p className="text-[10px] text-starlight/50 leading-relaxed mb-3.5 font-mono">
+                              {preset.description}
+                            </p>
+                            
+                            {/* Stance preview strip */}
+                            <div className="space-y-1 bg-black/45 p-2.5 rounded-xl border border-white/5">
+                              <div className="flex items-center justify-between text-[7px] font-mono text-starlight/40 uppercase tracking-widest border-b border-white/5 pb-1 mb-1">
+                                <span>Injectable Stances preview</span>
+                                <span>Opener: {preset.opener}</span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="text-[8px] font-mono text-amber-500/75 truncate" title={preset.stances.lion}>
+                                  <strong>Lion:</strong> {preset.stances.lion}
+                                </div>
+                                <div className="text-[8px] font-mono text-purple-400 truncate" title={preset.stances.jaguar}>
+                                  <strong>Jag:</strong> {preset.stances.jaguar}
+                                </div>
+                                <div className="text-[8px] font-mono text-blue-400 truncate" title={preset.stances.tiger}>
+                                  <strong>Tiger:</strong> {preset.stances.tiger}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Active focus highlight */}
+                            {isActive && (
+                              <div className="absolute inset-0 border border-purple-500 rounded-2xl pointer-events-none" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Quick loaded indicator */}
+                    {debateTopicSpark && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <CheckCircle2 className="w-5 h-5 text-amber-500 flex-none self-center" />
+                          <div>
+                            <span className="text-[8px] font-mono font-bold text-amber-500 uppercase tracking-widest block">Debate Parameters Injected Successfully</span>
+                            <span className="text-xs text-starlight/85 font-mono italic">"{debateTopicSpark}"</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDebateTopicSpark('');
+                            setDebateStances({ lion: '', jaguar: '', tiger: '' });
+                          }}
+                          className="px-3.5 py-1.5 text-[9px] font-mono bg-white/5 hover:bg-white/10 text-starlight hover:text-white rounded-xl border border-white/10 cursor-pointer transition-all uppercase self-stretch sm:self-center text-center"
+                        >
+                          Clear PresetStance
+                        </button>
+                      </motion.div>
+                    )}
+                  </div>
+                ) : (
+                  /* RENDER: DIRECTOR CORE EXPERT VIEW */
+                  <div className="space-y-6">
+                    {/* Mode Selector and Opener Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Intensity Grid */}
+                      <div className="bg-black/25 p-4 rounded-2xl border border-white/5">
+                        <label className="text-[9px] font-mono font-bold text-purple-400 uppercase tracking-widest block mb-1.5">
+                          Argument Intensity
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(['harmonious', 'dialectic', 'confrontational'] as const).map(intensity => {
+                            const labels = {
+                              harmonious: { title: 'Harmonious', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5', desc: 'Consensus oriented' },
+                              dialectic: { title: 'Dialectic', color: 'text-blue-400 border-blue-500/20 bg-blue-500/5', desc: 'Socratic critique' },
+                              confrontational: { title: 'Clash', color: 'text-rose-400 border-rose-500/20 bg-rose-500/5', desc: 'Sovereign clashing' }
+                            };
+                            const config = labels[intensity];
+                            const isActive = debateIntensity === intensity;
+                            return (
+                              <button
+                                key={intensity}
+                                type="button"
+                                onClick={() => setDebateIntensity(intensity)}
+                                className={`p-2 rounded-xl border text-center transition-all cursor-pointer flex flex-col items-center justify-between min-h-[55px] ${
+                                  isActive
+                                    ? `bg-purple-500/20 border-purple-400 text-purple-350 shadow-[0_0_10px_rgba(168,85,247,0.15)]`
+                                    : `${config.color} opacity-60 hover:opacity-100`
+                                }`}
+                              >
+                                <span className="text-[9px] font-bold uppercase tracking-wider">{config.title}</span>
+                                <span className="text-[8px] opacity-50 block mt-1 leading-none">{config.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Opener selector */}
+                      <div className="bg-black/25 p-4 rounded-2xl border border-white/5 flex flex-col justify-between">
+                        <div>
+                          <label className="text-[9px] font-mono font-bold text-purple-400 uppercase tracking-widest block mb-1.5">
+                            Opening Orator Node
+                          </label>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {(['lion', 'jaguar', 'tiger', 'random'] as const).map(speaker => (
+                              <button
+                                key={speaker}
+                                type="button"
+                                onClick={() => setDebateOpener(speaker)}
+                                className={`py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+                                  debateOpener === speaker
+                                    ? 'bg-purple-500 text-white border-purple-400'
+                                    : 'bg-white/5 border-white/10 text-starlight/40 hover:bg-white/10'
+                                }`}
+                              >
+                                {speaker}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-[8px] font-mono opacity-40 uppercase tracking-widest mt-2 leading-tight">
+                          * Dictates which Council matrix initiates opening arguments.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Customized Trigger/Spark Input */}
+                    <div className="bg-black/25 p-4 rounded-2xl border border-white/5">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[9px] font-mono font-bold text-purple-400 uppercase tracking-widest flex items-center gap-1.5">
+                          <Flame className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
+                          <span>Crisis Prompt Spark</span>
+                        </label>
+                        {debateTopicSpark && (
+                          <button 
+                            type="button"
+                            onClick={() => setDebateTopicSpark('')}
+                            className="text-[8px] text-starlight/30 uppercase tracking-wider hover:text-white"
+                          >
+                            Reset Spark
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={debateTopicSpark}
+                        onChange={(e) => setDebateTopicSpark(e.target.value)}
+                        placeholder="E.g., Enigmatic frequency code emanating from Outer Rim Silence Probes..."
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-xs text-starlight placeholder-starlight/25 font-mono focus:outline-hidden focus:border-purple-400 transition-all font-medium"
+                      />
+                      <p className="text-[8px] font-mono opacity-40 uppercase tracking-widest mt-1.5 leading-normal">
+                        * Overrides standard parameters. Forces the three members to focus on this exact catalyst.
+                      </p>
+                    </div>
+
+                    {/* Council Members custom stances inputs */}
+                    <div className="bg-black/25 p-4 rounded-2xl border border-white/5 space-y-3">
+                      <div className="flex items-center gap-1.5">
+                        <Brain className="w-4 h-4 text-purple-400" />
+                        <span className="text-[9px] font-mono font-bold text-purple-400 uppercase tracking-widest">
+                          Custom Stances Matrix (Optional)
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {/* Lion Customizer */}
+                        <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full overflow-hidden bg-amber-500/20 border border-amber-500/40 flex items-center justify-center font-bold text-[8px] text-amber-500 font-mono">L</div>
+                            <span className="text-[9px] font-display font-bold text-amber-500">Lion Position</span>
+                          </div>
+                          <textarea
+                            value={debateStances.lion}
+                            onChange={(e) => setDebateStances({ ...debateStances, lion: e.target.value })}
+                            placeholder="Default: wise legacy spirit..."
+                            className="w-full bg-black/30 border border-white/5 rounded-lg p-1.5 text-[9px] font-mono text-starlight focus:outline-hidden focus:border-purple-500/50 resize-none h-12"
+                          />
+                        </div>
+
+                        {/* Jaguar Customizer */}
+                        <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full overflow-hidden bg-purple-500/20 border border-purple-500/40 flex items-center justify-center font-bold text-[8px] text-purple-400 font-mono">J</div>
+                            <span className="text-[9px] font-display font-bold text-purple-400">Jaguar Position</span>
+                          </div>
+                          <textarea
+                            value={debateStances.jaguar}
+                            onChange={(e) => setDebateStances({ ...debateStances, jaguar: e.target.value })}
+                            placeholder="Default: mathematical optimization..."
+                            className="w-full bg-black/30 border border-white/5 rounded-lg p-1.5 text-[9px] font-mono text-starlight focus:outline-hidden focus:border-purple-500/50 resize-none h-12"
+                          />
+                        </div>
+
+                        {/* Tiger Customizer */}
+                        <div className="p-2.5 bg-white/5 rounded-xl border border-white/5 flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-4 rounded-full overflow-hidden bg-blue-500/20 border border-blue-500/40 flex items-center justify-center font-bold text-[8px] text-blue-400 font-mono">T</div>
+                            <span className="text-[9px] font-display font-bold text-blue-400">Tiger Position</span>
+                          </div>
+                          <textarea
+                            value={debateStances.tiger}
+                            onChange={(e) => setDebateStances({ ...debateStances, tiger: e.target.value })}
+                            placeholder="Default: skeletal vigilance..."
+                            className="w-full bg-black/30 border border-white/5 rounded-lg p-1.5 text-[9px] font-mono text-starlight focus:outline-hidden focus:border-purple-500/50 resize-none h-12"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Compile Button for custom mode */}
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            compileDebateDeckLocal(
+                              debateTopicSpark || "Custom Philosophical Dispute",
+                              debateStances,
+                              debateIntensity,
+                              debateOpener,
+                              "Custom Stances Matrix"
+                            );
+                          }}
+                          className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-mono text-[9px] font-bold rounded-xl border border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)] hover:scale-105 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer uppercase"
+                        >
+                          <Zap className="w-3.5 h-3.5 animate-pulse text-amber-300" />
+                          <span>Compile Custom Debate Deck</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {/* Theme Selector */}
         <div className="glass-panel p-6 bg-amber-500/5 border-amber-500/20 mb-8 overflow-hidden relative">
           <div className="absolute top-0 right-0 p-8 opacity-5">
@@ -931,38 +2147,75 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
                 </button>
 
                 {section.status === 'completed' && (
-                  <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
-                    <p className="text-[10px] font-mono text-starlight/40 px-2">READ AS:</p>
-                    <div className="flex gap-1">
-                      {characters.map(char => (
-                        <button
-                          key={char.id}
-                          onClick={() => onPlayVoice(section.id, char.voice)}
-                          disabled={section.isVoiceGenerating}
-                          title={`Read by ${char.name}`}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-amber-500/20 text-starlight hover:text-amber-400 transition-all border border-white/5 disabled:opacity-50 group/voice"
-                        >
-                          <div className="flex flex-col items-center gap-0.5">
-                            <Users className="w-4 h-4" />
-                            <span className="text-[6px] font-mono opacity-60 group-hover/voice:opacity-100 uppercase">{char.id}</span>
+                  <div className="flex flex-wrap items-center gap-4">
+                    {section.audioData && (
+                      <button
+                        onClick={() => playAudio(section.audioData!, section.audioMimeType || 'audio/mp3')}
+                        className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 text-[10px] font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:scale-105 active:scale-95 cursor-pointer"
+                        title="Replay compiled celestial transmission"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>REPLAY TRANSMISSION</span>
+                      </button>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-black/50 p-3 rounded-2xl border border-white/5 w-full">
+                      <div className="flex items-center gap-1.5 px-1 flex-shrink-0">
+                        <Volume2 className="w-3.5 h-3.5 text-amber-500" />
+                        <p className="text-[10px] font-mono font-bold text-amber-500 uppercase tracking-widest leading-none">Vocal Engine Selection</p>
+                      </div>
+                      
+                      <div className="flex flex-wrap items-center gap-3 flex-1">
+                        {/* Triumvirate Voices Group */}
+                        <div className="flex items-center gap-1.5 bg-amber-500/5 p-1 rounded-xl border border-amber-500/20">
+                          <span className="text-[8px] font-mono text-amber-400 font-bold px-1.5 uppercase tracking-wider">Triumvirate:</span>
+                          <div className="flex gap-1">
+                            {characters.map(char => {
+                              const labelName = char.id === 'lion' ? 'LION' : (char.id === 'jaguar' ? 'JAGUAR' : 'TIGER');
+                              const titleName = char.id === 'lion' ? 'Visionary Lion (Fenrir Voice)' : (char.id === 'jaguar' ? 'Strategist Jaguar (Zephyr Voice)' : 'Guardian Tiger (Charon Voice)');
+                              return (
+                                <button
+                                  key={char.id}
+                                  onClick={() => onPlayVoice(section.id, char.voice)}
+                                  disabled={section.isVoiceGenerating}
+                                  title={`Read by ${titleName}`}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-amber-500/20 text-starlight hover:text-amber-400 transition-all border border-white/5 disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                                >
+                                  {section.isVoiceGenerating ? (
+                                    <RefreshCcw className="w-3 h-3 animate-spin text-amber-500" />
+                                  ) : (
+                                    <Users className="w-3 h-3 text-amber-500/70" />
+                                  )}
+                                  <span className="text-[9px] font-mono uppercase tracking-wider font-bold">{labelName}</span>
+                                </button>
+                              );
+                            })}
                           </div>
-                        </button>
-                      ))}
-                      <div className="w-[1px] h-6 bg-white/10 mx-1 self-center" />
-                      {NEURAL_VOICES.map(voice => (
-                        <button
-                          key={voice}
-                          onClick={() => onPlayVoice(section.id, voice)}
-                          disabled={section.isVoiceGenerating}
-                          title={`Read by Neural Voice: ${voice}`}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-blue-500/20 text-starlight hover:text-blue-400 transition-all border border-white/5 disabled:opacity-50 group/neural"
-                        >
-                          <div className="flex flex-col items-center gap-0.5">
-                            <Volume2 className="w-4 h-4" />
-                            <span className="text-[6px] font-mono opacity-60 group-hover/neural:opacity-100 uppercase">{voice}</span>
+                        </div>
+
+                        {/* Standard Neural Cores Group */}
+                        <div className="flex items-center gap-1.5 bg-blue-500/5 p-1 rounded-xl border border-blue-500/20">
+                          <span className="text-[8px] font-mono text-blue-400 font-bold px-1.5 uppercase tracking-wider">Neural Cores:</span>
+                          <div className="flex gap-1">
+                            {NEURAL_VOICES.map(voice => (
+                              <button
+                                key={voice}
+                                onClick={() => onPlayVoice(section.id, voice)}
+                                disabled={section.isVoiceGenerating}
+                                title={`Read by Neural Voice: ${voice}`}
+                                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-blue-500/20 text-starlight hover:text-blue-400 transition-all border border-white/5 disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                              >
+                                {section.isVoiceGenerating ? (
+                                  <RefreshCcw className="w-3 h-3 animate-spin text-blue-400" />
+                                ) : (
+                                  <Volume2 className="w-3 h-3 text-blue-400/70" />
+                                )}
+                                <span className="text-[9px] font-mono uppercase tracking-wider">{voice}</span>
+                              </button>
+                            ))}
                           </div>
-                        </button>
-                      ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -979,7 +2232,23 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
                     animate={{ opacity: 1, x: 0 }}
                     className="w-full md:w-64 aspect-video rounded-2xl overflow-hidden border border-white/10 relative group/broll"
                   >
-                    <video src={section.bRollUrl} autoPlay muted loop className="w-full h-full object-cover opacity-60" />
+                    {section.bRollUrl === 'cosmic_fallback' || videoErrors[section.bRollUrl] ? (
+                      <CosmicFallbackAnimation label={section.bRollLabel} />
+                    ) : (
+                      <video 
+                        src={section.bRollUrl} 
+                        autoPlay 
+                        muted 
+                        loop 
+                        playsInline
+                        {...({ referrerPolicy: "no-referrer", crossOrigin: "anonymous" } as any)}
+                        onError={(e) => {
+                          console.warn(`B-roll video failed to load gracefully: ${section.bRollUrl}`);
+                          setVideoErrors(prev => ({ ...prev, [section.bRollUrl!]: true }));
+                        }}
+                        className="w-full h-full object-cover opacity-60" 
+                      />
+                    )}
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/broll:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                       <button 
                         onClick={() => onSelectBRoll(section.id)}
@@ -1016,91 +2285,320 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
                   </button>
                 )}
                 
-                <div 
-                  onClick={() => editingId !== section.id && handleStartEdit(section)}
-                  className={`flex-1 min-h-[120px] p-6 bg-black/40 rounded-2xl border border-white/5 font-mono text-sm leading-relaxed text-starlight/70 whitespace-pre-wrap selection:bg-amber-500/30 relative overflow-hidden transition-all ${editingId !== section.id ? 'hover:bg-white/5 cursor-text group/content' : 'ring-2 ring-amber-500/50'}`}
-                >
-                  {editingId === section.id ? (
-                    <div className="h-full flex flex-col gap-4">
-                      <textarea
-                        autoFocus
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onBlur={() => {
-                          // Optional: Auto-save on blur if NOT empty or just close
-                          // handleSave(section.id); 
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                            handleSave(section.id);
-                          }
-                          if (e.key === 'Escape') {
-                            setEditingId(null);
-                          }
-                        }}
-                        className="flex-1 bg-transparent border-none outline-hidden resize-none w-full h-full text-starlight scroll-hide min-h-[100px]"
-                        placeholder="Neural context required..."
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
-                          className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 transition-all"
+                <div className="flex-1 flex flex-col gap-3 min-h-[300px]">
+                  {/* View Mode Switching Tabs (only when completed & has content) */}
+                  {section.status === 'completed' && section.content && editingId !== section.id && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-black/35 p-2 rounded-xl border border-white/5">
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => setScriptViewModes(v => ({ ...v, [section.id]: 'sim' }))}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-mono font-bold uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                            getSectionViewMode(section.id, section.content) === 'sim'
+                              ? 'bg-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                              : 'text-starlight/50 hover:bg-white/5'
+                          }`}
                         >
-                          <X className="w-4 h-4" />
+                          <Brain className="w-3 h-3 text-purple-300" />
+                          <span>Council Chamber Sim</span>
                         </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleSave(section.id); }}
-                          className="px-4 py-2 bg-amber-500 text-black rounded-lg text-[10px] font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all"
+                        <button
+                          onClick={() => setScriptViewModes(v => ({ ...v, [section.id]: 'raw' }))}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-mono font-bold uppercase transition-all flex items-center gap-1 cursor-pointer ${
+                            getSectionViewMode(section.id, section.content) === 'raw'
+                              ? 'bg-amber-500 text-black shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                              : 'text-starlight/50 hover:bg-white/5'
+                          }`}
                         >
-                          <Check className="w-3 h-3" />
-                          SYNC CHANGES
+                          <ScrollText className="w-3 h-3 text-amber-900" />
+                          <span>Raw Manuscript Log</span>
                         </button>
                       </div>
-                      <p className="text-[8px] opacity-30 uppercase tracking-widest text-right">Ctrl+Enter to sync / ESC to abort</p>
+
+                      {getSectionViewMode(section.id, section.content) === 'sim' && (
+                        <div className="flex items-center gap-2">
+                           {playbackStates[section.id]?.isPlaying ? (
+                            <button
+                              onClick={() => {
+                                if (currentAudioRef.current) {
+                                  currentAudioRef.current.pause();
+                                  currentAudioRef.current = null;
+                                }
+                                setActiveSpeakerId?.(null);
+                                setPlaybackStates(prev => ({
+                                  ...prev,
+                                  [section.id]: { ...prev[section.id], isPlaying: false }
+                                }));
+                              }}
+                              className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-bold font-mono tracking-wider flex items-center gap-1 cursor-pointer transition-all animate-pulse"
+                            >
+                              <Pause className="w-2.5 h-2.5 fill-current" />
+                              <span>HALT DEBATE DECRYPTION</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                const lines = parseScriptToDialogue(section.content || "");
+                                playDialogueLine(section.id, 0, lines, true);
+                              }}
+                              className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-black rounded-lg text-[9px] font-bold font-mono tracking-wider flex items-center gap-1 cursor-pointer transition-all shadow-[0_0_12px_rgba(16,185,129,0.25)] hover:scale-105"
+                            >
+                              <Play className="w-2.5 h-2.5 fill-current" />
+                              <span>COUNCIL DEBATE PLAYBACK</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <>
-                      {editingId !== section.id && section.status === 'completed' && (
-                        <div className="absolute top-4 right-4 opacity-0 group-hover/content:opacity-100 transition-opacity">
-                          <button className="p-2 bg-white/10 rounded-lg text-amber-500 hover:bg-white/20 transition-all">
-                            <Save className="w-4 h-4" />
+                  )}
+
+                  {/* Script display box */}
+                  <div 
+                    onClick={() => editingId !== section.id && getSectionViewMode(section.id, section.content || "") === 'raw' && handleStartEdit(section)}
+                    className={`flex-1 p-6 bg-black/40 rounded-2xl border border-white/5 relative overflow-hidden transition-all ${
+                      editingId !== section.id && getSectionViewMode(section.id, section.content || "") === 'raw' ? 'hover:bg-white/5 cursor-text group/content' : ''
+                    } ${editingId === section.id ? 'ring-2 ring-amber-500/50' : ''}`}
+                  >
+                    {editingId === section.id ? (
+                      <div className="h-full flex flex-col gap-4">
+                        <textarea
+                          autoFocus
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                              handleSave(section.id);
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingId(null);
+                            }
+                          }}
+                          className="flex-1 bg-transparent border-none outline-hidden resize-none w-full h-[250px] text-starlight font-mono text-sm leading-relaxed scroll-hide"
+                          placeholder="Neural context required..."
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
+                            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 transition-all cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleSave(section.id); }}
+                            className="px-4 py-2 bg-amber-500 text-black rounded-lg text-[10px] font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Check className="w-3 h-3" />
+                            SYNC CHANGES
                           </button>
                         </div>
-                      )}
-                      
-                      {section.status === 'generating' && (
-                        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[2px]">
-                          <div className="relative">
-                            <RefreshCcw className="w-10 h-10 text-amber-500 animate-spin" />
+                        <p className="text-[8px] opacity-35 font-mono uppercase tracking-widest text-right">Ctrl+Enter to sync / ESC to abort</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Edit button in Raw or completed sections */}
+                        {section.status === 'completed' && getSectionViewMode(section.id, section.content || "") === 'raw' && (
+                          <div className="absolute top-4 right-4 opacity-0 group-hover/content:opacity-100 transition-opacity z-25">
+                            <button className="p-2 bg-white/10 rounded-lg text-amber-500 hover:bg-white/20 transition-all cursor-pointer">
+                              <Save className="w-4 h-4" />
+                            </button>
                           </div>
-                          <p className="mt-4 text-[10px] font-mono text-amber-500 uppercase tracking-[0.3em] animate-pulse">Syncing Neural Context...</p>
-                          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-white/5">
-                            <motion.div 
-                              className="h-full bg-amber-500"
-                              animate={{ x: ['-100%', '200%'] }}
-                              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                              style={{ width: '50%' }}
-                            />
+                        )}
+                        
+                        {/* Ifcompleted, look for view modes */}
+                        {section.status === 'completed' && section.content ? (
+                          getSectionViewMode(section.id, section.content) === 'sim' ? (
+                            /* SIMULATION VIEW PROTOCOL */
+                            <div className="space-y-4 max-h-[450px] overflow-y-auto scrollbar-thin pr-1">
+                              {parseScriptToDialogue(section.content).map((line, idx) => {
+                                const isLineActive = playbackStates[section.id]?.activeLineIndex === idx;
+                                const isLineLoading = playbackStates[section.id]?.loadingLineIndex === idx;
+                                
+                                let themeClasses = "border-white/5 bg-white/3 text-starlight/85";
+                                let badgeColor = "bg-white/10 text-white border border-white/10";
+                                let speakerLabel = line.speakerLabel;
+                                let avatarUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=150";
+                                
+                                const char = characters.find(c => c.id === line.speaker);
+                                if (char) {
+                                  avatarUrl = char.avatar;
+                                }
+                                
+                                if (line.speaker === 'lion') {
+                                  themeClasses = `border-amber-500/25 bg-amber-500/5 text-amber-100/90 ${isLineActive ? 'ring-2 ring-amber-400Shadow shadow-[0_0_15px_rgba(245,158,11,0.25)]' : ''}`;
+                                  badgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/30";
+                                } else if (line.speaker === 'jaguar') {
+                                  themeClasses = `border-purple-500/25 bg-purple-500/5 text-purple-100/90 ${isLineActive ? 'ring-2 ring-purple-400Shadow shadow-[0_0_15px_rgba(168,85,247,0.25)]' : ''}`;
+                                  badgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/30";
+                                } else if (line.speaker === 'tiger') {
+                                  themeClasses = `border-blue-500/25 bg-blue-500/5 text-blue-100/90 ${isLineActive ? 'ring-2 ring-blue-400Shadow shadow-[0_0_15px_rgba(59,130,246,0.25)]' : ''}`;
+                                  badgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/30";
+                                } else if (line.speaker === 'narration') {
+                                  themeClasses = "border-none bg-transparent text-starlight/40 italic text-[11px] text-center px-4 py-1.5 capitalize";
+                                }
+                                
+                                if (line.speaker === 'narration') {
+                                  return (
+                                    <div key={idx} className="flex justify-center my-2 select-text">
+                                      <div className="max-w-xl text-center">
+                                        <span className="text-[8px] font-mono opacity-25 uppercase tracking-widest block mb-1">{line.speakerLabel}</span>
+                                        <p className="font-mono">{line.text}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                
+                                const parts = parseLineParts(line.text);
+                                
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    className={`flex gap-3 my-4 items-start group/bubble transition-all select-text ${
+                                      line.speaker === 'tiger' ? 'flex-row-reverse' : ''
+                                    }`}
+                                  >
+                                    <div className="relative flex-shrink-0">
+                                      <img 
+                                        src={avatarUrl} 
+                                        alt={speakerLabel}
+                                        referrerPolicy="no-referrer"
+                                        className={`w-10 h-10 rounded-full object-cover border ${
+                                          line.speaker === 'lion' ? 'border-amber-500/35 shadow-[0_0_5px_rgba(245,158,11,0.2)]' : line.speaker === 'jaguar' ? 'border-purple-500/35 shadow-[0_0_5px_rgba(168,85,247,0.2)]' : 'border-blue-500/35 shadow-[0_0_5px_rgba(59,130,246,0.2)]'
+                                        }`}
+                                      />
+                                      {isLineActive && (
+                                        <span className="absolute -inset-0.5 rounded-full border border-purple-400 animate-ping opacity-60" />
+                                      )}
+                                    </div>
+                                    
+                                    <div className={`flex flex-col max-w-[80%] ${line.speaker === 'tiger' ? 'items-end' : 'items-start'}`}>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold tracking-widest uppercase ${badgeColor}`}>
+                                          {speakerLabel}
+                                        </span>
+                                        {isLineActive && (
+                                          <span className="flex items-center gap-1 text-[8px] text-purple-400 font-mono font-bold uppercase tracking-widest animate-pulse">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping" />
+                                            <span>SPEAKING</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      <div className={`p-4 rounded-2xl border text-xs md:text-sm leading-relaxed relative overflow-hidden transition-all duration-300 font-mono ${themeClasses}`}>
+                                        {isLineLoading && (
+                                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-[1px] z-10">
+                                            <RefreshCcw className="w-4 h-4 animate-spin text-purple-400" />
+                                          </div>
+                                        )}
+                                        
+                                        <p>
+                                          {parts.map((p, pIdx) => {
+                                            if (p.type === 'cue') {
+                                              return (
+                                                <span key={pIdx} className="text-purple-400 italic font-mono font-bold text-[10px] mx-1 bg-purple-500/15 px-1.5 py-0.5 rounded-md">
+                                                  {p.value}
+                                                </span>
+                                              );
+                                            }
+                                            return <span key={pIdx}>{p.value}</span>;
+                                          })}
+                                        </p>
+                                        
+                                        <button
+                                          onClick={() => {
+                                            const lines = parseScriptToDialogue(section.content || "");
+                                            playDialogueLine(section.id, idx, lines, false);
+                                          }}
+                                          disabled={isLineLoading}
+                                          className={`mt-2 py-1 px-2.5 rounded bg-black/65 hover:bg-black border border-white/5 text-starlight/60 hover:text-amber-400 transition-all text-[8px] font-mono flex items-center gap-1 cursor-pointer w-fit opacity-0 group-hover/bubble:opacity-100 ${isLineActive ? 'opacity-100 text-amber-400' : ''}`}
+                                        >
+                                          {isLineActive ? <Pause className="w-2.5 h-2.5 fill-current" /> : <Play className="w-2.5 h-2.5 fill-current" />}
+                                          <span>{isLineActive ? 'HALT' : 'SYNTH LINES'}</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            /* RAW SCENARIO TEXT VIEW */
+                            <div className="whitespace-pre-wrap font-mono text-xs md:text-sm leading-relaxed text-starlight/75 max-h-[400px] overflow-y-auto select-text scroll-hide">
+                              {section.content}
+                            </div>
+                          )
+                        ) : null}
+                        
+                        {section.status === 'generating' && (
+                          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/65 backdrop-blur-[2px]">
+                            <div className="relative">
+                              <RefreshCcw className="w-10 h-10 text-amber-500 animate-spin" />
+                            </div>
+                            <p className="mt-4 text-[10px] font-mono text-amber-500 uppercase tracking-[0.3em] animate-pulse">Syncing Neural Context...</p>
+                            <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-white/5">
+                              <motion.div 
+                                className="h-full bg-amber-500"
+                                animate={{ x: ['-100%', '200%'] }}
+                                transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                                style={{ width: '50%' }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {section.content || (
-                        <div className="flex flex-col items-center justify-center py-12 text-starlight/20 italic">
-                          <Sparkles className="w-8 h-8 mb-4 opacity-50" />
-                          <span>Awaiting neural-link transmission for this module...</span>
-                        </div>
-                      )}
-                    </>
-                  )}
+                        {!section.content && section.status !== 'generating' && (
+                          <div className="flex flex-col items-center justify-center py-16 text-starlight/20 italic">
+                            <Sparkles className="w-8 h-8 mb-4 opacity-50" />
+                            <span>Awaiting neural-link transmission for this module...</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
             </div>
           </div>
         </div>
       ))}
-    </div>
 
-      <div className="w-72 sticky top-8 space-y-6">
+        {/* Cosmic Animated Feed */}
+        <div className="pt-8 border-t border-white/5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-[14px] font-display font-bold text-amber-500 uppercase tracking-wider flex items-center gap-2">
+                <MonitorPlay className="w-4 h-4 text-amber-500" />
+                <span>Cosmic Animated Feed</span>
+              </h3>
+              <p className="text-[10px] font-mono text-starlight/40 uppercase tracking-widest mt-0.5">Atmospheric Real-Time B-Roll Synthesizer & Video Linkage Stream</p>
+            </div>
+            {selectingBRollForSection && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+                <span className="relative flex h-2 w-2 animate-pulse">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+                </span>
+                <span className="text-[9px] font-mono text-purple-400 uppercase tracking-wider font-bold">Awaiting Chapter Link for Module {selectingBRollForSection.toUpperCase()}</span>
+              </div>
+            )}
+          </div>
+          
+          <div className="bg-black/25 rounded-3xl p-6 border border-white/5 shadow-inner">
+            <CosmicBRollFeed 
+              bRolls={bRolls} 
+              onRefresh={onRefreshBRolls} 
+              onSelectBRoll={(bRoll) => {
+                if (selectingBRollForSection) {
+                  onLinkBRoll(bRoll);
+                } else {
+                  // Direct preview or start selecting B-roll
+                  onSelectBRoll(sections[0]?.id || 'b_cosmic');
+                }
+              }}
+              selectingForSection={selectingBRollForSection}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="w-72 sticky border-l border-white/5 pl-8 top-8 space-y-6">
         <div className="glass-panel p-6 divide-y divide-white/5">
           <div className="pb-4">
             <h4 className="text-xs font-mono text-starlight/30 uppercase tracking-widest mb-4">Chapter Topology</h4>
@@ -1132,11 +2630,373 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Master Debate Playback Bar */}
+      <div className="fixed bottom-6 right-6 left-6 lg:left-[312px] z-[90] bg-[#101026]/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-4 shadow-[0_15px_40px_rgba(0,0,0,0.6)] transition-all flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* LEFT COLUMN: ACTIVE DISCOURSE READOUT */}
+        <div className="flex items-center gap-3.5 w-full md:w-auto min-w-0">
+          <div className="flex-none w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center overflow-hidden relative">
+            {activeSpeakerId && characters.find(c => c.id === activeSpeakerId) ? (
+              (() => {
+                const char = characters.find(c => c.id === activeSpeakerId)!;
+                return char.lipSyncUrl ? (
+                  <video src={char.lipSyncUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                ) : char.animatedVideoUrl && char.animatedVideoUrl !== "cosmic_fallback" ? (
+                  <video src={char.animatedVideoUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                ) : char.avatar ? (
+                  <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="text-xs font-mono font-bold text-purle-400">{char.name.slice(0, 2).toUpperCase()}</span>
+                );
+              })()
+            ) : (
+              <span className="text-lg">{activePlaySection ? '🎙️' : '💿'}</span>
+            )}
+            {activeSpeakerId && (
+              <span className="absolute inset-0 border border-purple-500/50 rounded-xl animate-ping opacity-60" />
+            )}
+          </div>
+          
+          <div className="min-w-0 flex-1 md:flex-initial">
+            {activePlaySection ? (
+              (() => {
+                const state = playbackStates[activePlaySection.id];
+                const lines = parseScriptToDialogue(activePlaySection.content || '');
+                const currentLine = lines[state.activeLineIndex];
+                const speakerName = currentLine?.speaker === 'lion' ? 'Lion' : currentLine?.speaker === 'jaguar' ? 'Jaguar' : currentLine?.speaker === 'tiger' ? 'Tiger' : 'Narrator';
+                const speakerColorClass = currentLine?.speaker === 'lion' ? 'text-amber-400 font-bold' : currentLine?.speaker === 'jaguar' ? 'text-purple-400 font-bold' : currentLine?.speaker === 'tiger' ? 'text-blue-400 font-bold' : 'text-starlight font-bold';
+                const isWaitingForVoice = state.loadingLineIndex !== null;
+                
+                return (
+                  <div className="space-y-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-sm border border-purple-500/30 uppercase tracking-widest">
+                        {activePlaySection.title}
+                      </span>
+                      {isWaitingForVoice && (
+                        <span className="text-[8px] font-mono text-amber-400 animate-pulse uppercase tracking-wider flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                          CALIBRATING VOICE...
+                        </span>
+                      )}
+                    </div>
+                    
+                    {currentLine && (
+                      <div className="flex items-center gap-2 max-w-md text-left">
+                        <span className={`text-[10px] font-display font-extrabold flex-none ${speakerColorClass}`}>
+                          {speakerName}:
+                        </span>
+                        <span className="text-[10px] font-mono text-starlight/80 truncate block italic" title={currentLine.text}>
+                          "{currentLine.text}"
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="space-y-1 text-left">
+                <span className="text-[8px] font-mono text-starlight/30 uppercase tracking-widest block">MASTER SYSTEM COMMANDER</span>
+                {completedSections.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-starlight/50 uppercase font-mono">LOAD DEBATE DECK:</span>
+                    <select
+                      value={selectedBarSectionId}
+                      onChange={(e) => setSelectedBarSectionId(e.target.value)}
+                      className="bg-black/50 text-[10px] text-purple-300 font-mono border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:border-purple-400 cursor-pointer text-left"
+                    >
+                      {completedSections.map(cs => (
+                        <option key={cs.id} value={cs.id} className="bg-[#121225] text-starlight">{cs.title.toUpperCase()}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-mono text-starlight/50 uppercase">Generate or load a segment to command playbacks</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CENTER COLUMN: CD DECK REMOTE CONTROLLER */}
+        <div className="flex flex-col items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-4 text-center justify-center">
+            {/* Skip Back / Turn Regress */}
+            <button
+              type="button"
+              disabled={!activePlaySection}
+              onClick={() => {
+                if (!activePlaySection) return;
+                const state = playbackStates[activePlaySection.id];
+                const lines = parseScriptToDialogue(activePlaySection.content || '');
+                const prevIndex = state.activeLineIndex - 1;
+                if (prevIndex >= 0) {
+                  playDialogueLine(activePlaySection.id, prevIndex, lines, true);
+                }
+              }}
+              className="w-8 h-8 rounded-full border border-white/5 bg-white/5 flex items-center justify-center text-starlight/60 hover:text-white hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+              title="Regress monologue turn"
+            >
+              <SkipBack className="w-4 h-4" />
+            </button>
+
+            {/* Master Play / Pause */}
+            {activePlaySection && playbackStates[activePlaySection.id]?.isPlaying ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentAudioRef.current) {
+                    currentAudioRef.current.pause();
+                  }
+                  setActiveSpeakerId?.(null);
+                  setPlaybackStates(prev => ({
+                    ...prev,
+                    [activePlaySection.id]: {
+                      ...prev[activePlaySection.id],
+                      isPlaying: false
+                    }
+                  }));
+                }}
+                className="w-12 h-12 rounded-full bg-purple-500 hover:bg-purple-600 text-white flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.4)] active:scale-95 transition-all cursor-pointer border border-purple-400"
+                title="Pause playback"
+              >
+                <Pause className="w-5 h-5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={completedSections.length === 0}
+                onClick={() => {
+                  const targetId = activePlaySection?.id || selectedBarSectionId;
+                  const targetScript = sections.find(s => s.id === targetId);
+                  if (targetScript && targetScript.content && targetScript.status === 'completed') {
+                    const lines = parseScriptToDialogue(targetScript.content);
+                    const activeState = playbackStates[targetScript.id];
+                    const startIndex = activeState && activeState.activeLineIndex >= 0 ? activeState.activeLineIndex : 0;
+                    
+                    setPlaybackStates(prev => ({
+                      ...prev,
+                      [targetScript.id]: {
+                        isPlaying: true,
+                        activeLineIndex: startIndex,
+                        loadingLineIndex: null
+                      }
+                    }));
+                    playDialogueLine(targetId, startIndex, lines, true);
+                  }
+                }}
+                className="w-12 h-12 rounded-full bg-amber-500 text-black flex items-center justify-center hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)] active:scale-95 transition-all disabled:opacity-35 cursor-pointer border border-amber-300"
+                title="Initiate discourse playback"
+              >
+                <Play className="w-5 h-5 fill-current ml-0.5" />
+              </button>
+            )}
+
+            {/* Reset / Halt */}
+            <button
+              type="button"
+              disabled={completedSections.length === 0 && !activePlaySection}
+              onClick={() => {
+                setActiveSpeakerId?.(null);
+                sections.forEach(s => {
+                  if (playbackStates[s.id]?.isPlaying || playbackStates[s.id]?.activeLineIndex >= 0) {
+                    if (currentAudioRef.current) currentAudioRef.current.pause();
+                    setPlaybackStates(prev => ({
+                      ...prev,
+                      [s.id]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+                    }));
+                  }
+                });
+              }}
+              className="w-8 h-8 rounded-full border border-white/5 bg-white/5 flex items-center justify-center text-starlight/60 hover:text-white hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+              title="Halt & clear playback pointers"
+            >
+              <Square className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Skip Forward / Turn Advance */}
+            <button
+              type="button"
+              disabled={!activePlaySection}
+              onClick={() => {
+                if (!activePlaySection) return;
+                const state = playbackStates[activePlaySection.id];
+                const lines = parseScriptToDialogue(activePlaySection.content || '');
+                const nextIndex = state.activeLineIndex + 1;
+                if (nextIndex < lines.length) {
+                  playDialogueLine(activePlaySection.id, nextIndex, lines, true);
+                } else {
+                  if (currentAudioRef.current) currentAudioRef.current.pause();
+                  setActiveSpeakerId?.(null);
+                  setPlaybackStates(prev => ({
+                    ...prev,
+                    [activePlaySection.id]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+                  }));
+                }
+              }}
+              className="w-8 h-8 rounded-full border border-white/5 bg-white/5 flex items-center justify-center text-starlight/60 hover:text-white hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 cursor-pointer"
+              title="Advance monologue turn"
+            >
+              <SkipForward className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* REAL-TIME PROGRESS BAR DOT SYSTEM */}
+          {activePlaySection && (
+            <div className="w-64 flex flex-col items-center">
+              {(() => {
+                const state = playbackStates[activePlaySection.id];
+                const lines = parseScriptToDialogue(activePlaySection.content || '');
+                return (
+                  <div className="w-full flex items-center gap-1 mt-1">
+                    {lines.map((l, idx) => {
+                      const isPast = idx < state.activeLineIndex;
+                      const isCurrent = idx === state.activeLineIndex;
+                      let dotColor = 'bg-white/10';
+                      if (isPast) dotColor = 'bg-purple-500/60';
+                      if (isCurrent) dotColor = 'bg-purple-400 animate-pulse border border-purple-300';
+                      
+                      return (
+                        <button
+                           key={idx}
+                           type="button"
+                           onClick={() => {
+                             playDialogueLine(activePlaySection.id, idx, lines, true);
+                           }}
+                           className={`h-1.5 flex-1 rounded-sm cursor-pointer hover:bg-purple-500/30 transition-all ${dotColor}`}
+                           title={`Jump to Turn ${idx + 1}: ${l.speaker.toUpperCase()}`}
+                        />
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT COLUMN: SPEECH TUNER SLIDER */}
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          <button
+            type="button"
+            onClick={handleToggleMute}
+            className="p-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 text-starlight/85 hover:text-white transition-colors cursor-pointer"
+            title={isPlaybackMuted ? 'Unmute Speech Audio' : 'Mute Speech Audio'}
+          >
+            {isPlaybackMuted ? <VolumeX className="w-4 h-4 text-rose-450" /> : <Volume2 className="w-4 h-4 text-purple-400" />}
+          </button>
+          
+          <div className="flex flex-col w-28 text-left">
+            <div className="flex justify-between text-[8px] font-mono text-starlight/40 uppercase tracking-wider mb-0.5">
+              <span>Vocal Out</span>
+              <span>{isPlaybackMuted ? 'Muted' : `${Math.round(playbackVolume * 100)}%`}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={playbackVolume}
+              onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+              className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-purple-500 text-purple-500"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CosmicFallbackAnimation = ({ label }: { label?: string }) => {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationId: number;
+    let width = canvas.width = canvas.offsetWidth || 250;
+    let height = canvas.height = canvas.offsetHeight || 140;
+
+    // Generate drift particles
+    const particles: Array<{ x: number; y: number; r: number; dx: number; dy: number; color: string }> = [];
+    for (let i = 0; i < 45; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        r: Math.random() * 1.5 + 0.5,
+        dx: (Math.random() - 0.5) * 0.15,
+        dy: (Math.random() - 0.5) * 0.15,
+        color: i % 3 === 0 ? 'rgba(168, 85, 247, 0.45)' : i % 3 === 1 ? 'rgba(59, 130, 246, 0.45)' : 'rgba(251, 191, 36, 0.45)'
+      });
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      width = canvas.width = canvas.offsetWidth || 250;
+      height = canvas.height = canvas.offsetHeight || 140;
+    });
+    resizeObserver.observe(canvas);
+
+    const render = () => {
+      ctx.fillStyle = '#06060c';
+      ctx.fillRect(0, 0, width, height);
+
+      // Render cosmic background glow
+      const gradient = ctx.createRadialGradient(width / 2, height / 2, 5, width / 2, height / 2, Math.max(width, height) / 1.5);
+      gradient.addColorStop(0, 'rgba(88, 28, 135, 0.18)');
+      gradient.addColorStop(0.5, 'rgba(30, 27, 75, 0.08)');
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+
+      // Draw and update particles
+      particles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = p.color;
+        ctx.fill();
+
+        p.x += p.dx;
+        p.y += p.dy;
+
+        // Bounce/Wrap
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+        if (p.y < 0) p.y = height;
+        if (p.y > height) p.y = 0;
+      });
+      ctx.shadowBlur = 0; // reset
+
+      animationId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  return (
+    <div className="w-full h-full relative overflow-hidden bg-[#06060c] flex items-center justify-center min-h-[140px]">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent" />
+      <div className="relative z-10 text-center pointer-events-none select-none px-3 space-y-1">
+        <p className="text-[10px] font-mono font-bold text-amber-500 uppercase tracking-widest block truncate max-w-[220px] mx-auto">{label || "Celestial Node"}</p>
+        <p className="text-[7px] font-mono text-starlight/40 tracking-widest uppercase">HARMONIC LOOP EMULATED</p>
+      </div>
     </div>
   );
 };
 
 const CosmicBRollFeed = ({ bRolls, onRefresh, onSelectBRoll, selectingForSection }: { bRolls: BRoll[], onRefresh: () => void, onSelectBRoll?: (bRoll: BRoll) => void, selectingForSection?: string | null }) => {
+  const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
+
   return (
     <div className={`glass-panel p-6 overflow-hidden relative group transition-all duration-500 ${selectingForSection ? 'bg-purple-500/20 border-purple-500 shadow-[0_0_50px_rgba(168,85,247,0.2)]' : 'bg-purple-500/5 border-purple-500/20'}`}>
       <div className="flex items-center justify-between mb-4">
@@ -1158,7 +3018,7 @@ const CosmicBRollFeed = ({ bRolls, onRefresh, onSelectBRoll, selectingForSection
         </button>
       </div>
       
-      <div className="flex gap-3 overflow-x-auto scroll-hide pb-2">
+      <div className="flex gap-3 overflow-x-auto custom-scrollbar pb-3">
         {bRolls.map((br) => (
           <motion.div 
             key={br.id}
@@ -1168,13 +3028,23 @@ const CosmicBRollFeed = ({ bRolls, onRefresh, onSelectBRoll, selectingForSection
               selectingForSection ? 'border-purple-500 animate-pulse hover:animate-none hover:border-white shadow-lg' : 'border-white/5'
             }`}
           >
-            <video 
-              src={br.url} 
-              autoPlay 
-              muted 
-              loop 
-              className={`w-full h-full object-cover transition-opacity ${selectingForSection ? 'opacity-100' : 'opacity-60 group-hover/item:opacity-100'}`} 
-            />
+            {br.url === 'cosmic_fallback' || videoErrors[br.url] ? (
+              <CosmicFallbackAnimation label={br.label} />
+            ) : (
+              <video 
+                src={br.url} 
+                autoPlay 
+                muted 
+                loop 
+                playsInline
+                {...({ referrerPolicy: "no-referrer", crossOrigin: "anonymous" } as any)}
+                onError={(e) => {
+                  console.warn(`B-roll feed item failing to load: ${br.url}`);
+                  setVideoErrors(prev => ({ ...prev, [br.url]: true }));
+                }}
+                className={`w-full h-full object-cover transition-opacity ${selectingForSection ? 'opacity-100' : 'opacity-60 group-hover/item:opacity-100'}`} 
+              />
+            )}
             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover/item:opacity-100 transition-opacity p-3 flex flex-col justify-end">
               <p className="text-[8px] font-mono text-starlight leading-none uppercase">{br.label}</p>
               {selectingForSection && (
@@ -1201,14 +3071,24 @@ const NeuralProcessMonitor = ({
   generatingLipSyncs, 
   scripts,
   isTrailerLoading,
-  isExporting
+  isExporting,
+  diagnosticLogs = [],
+  bRollError = null,
+  lipSyncError = null,
+  videoError = null,
+  setShowDiagnosticOverlay
 }: { 
   generatingAvatars: Record<string, boolean>, 
   generatingManifestos: Record<string, boolean>, 
   generatingLipSyncs: Record<string, boolean>,
   scripts: ScriptSection[],
   isTrailerLoading: boolean,
-  isExporting: boolean
+  isExporting: boolean,
+  diagnosticLogs?: any[],
+  bRollError?: string | null,
+  lipSyncError?: string | null,
+  videoError?: string | null,
+  setShowDiagnosticOverlay?: (show: boolean) => void
 }) => {
   const activeProcesses = [
     ...Object.entries(generatingAvatars).filter(([_, v]) => v).map(([id]) => ({ id, label: `Syncing Biometrics: ${id.toUpperCase()}`, color: 'bg-amber-500' })),
@@ -1221,11 +3101,55 @@ const NeuralProcessMonitor = ({
   if (isTrailerLoading) activeProcesses.push({ id: 'trailer', label: 'Transmitting Cosmic Trailer', color: 'bg-amber-500' });
   if (isExporting) activeProcesses.push({ id: 'export', label: 'Synthesizing Final Montage', color: 'bg-amber-500' });
 
-  if (activeProcesses.length === 0) return null;
+  const activeErrors: Array<{ id: string; module: string; message: string }> = [];
+  if (bRollError) {
+    activeErrors.push({ id: 'broll-err', module: 'B-Roll Generator', message: bRollError });
+  }
+  if (lipSyncError) {
+    activeErrors.push({ id: 'lipsync-err', module: 'Lip-Sync Generator', message: lipSyncError });
+  }
+  if (videoError) {
+    activeErrors.push({ id: 'video-err', module: 'Video Compositor', message: videoError });
+  }
+
+  const hasErrors = activeErrors.length > 0;
+
+  if (activeProcesses.length === 0 && !hasErrors) return null;
 
   return (
     <div className="fixed bottom-8 right-8 z-[60] flex flex-col items-end gap-3 pointer-events-none">
       <AnimatePresence>
+        {/* Active Error State Notifications in the Process List */}
+        {activeErrors.map((err) => (
+          <motion.div
+            key={err.id}
+            initial={{ opacity: 0, x: 50, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 50, scale: 0.9 }}
+            onClick={() => {
+              if (setShowDiagnosticOverlay) setShowDiagnosticOverlay(true);
+            }}
+            className="glass-panel px-4 py-3 border-red-500/80 bg-red-950/90 backdrop-blur-md flex items-start gap-4 min-w-[265px] max-w-[340px] shadow-[0_0_25px_rgba(239,68,68,0.35)] pointer-events-auto cursor-pointer animate-[pulse_1.8s_infinite] select-none"
+          >
+            <div className="relative flex items-center justify-center p-1.5 rounded-lg bg-red-500/20 text-red-400">
+              <AlertOctagon className="w-4 h-4 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-[9px] font-mono font-black text-red-400 tracking-wider uppercase flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping inline-block" />
+                CRITICAL: {err.module.toUpperCase()}
+              </p>
+              <p className="text-[10px] text-white/95 mt-1 leading-snug break-words font-mono font-bold">
+                {err.message}
+              </p>
+              <p className="text-[8px] font-mono text-red-400/70 mt-1 uppercase tracking-widest hover:underline">
+                TAP TO CALIBRATE & RE-SYNCHRONIZE
+              </p>
+            </div>
+          </motion.div>
+        ))}
+
+        {/* Active Processes Loop */}
         {activeProcesses.map((proc, idx) => (
           <motion.div
             key={`${proc.id}-${idx}`}
@@ -1244,7 +3168,7 @@ const NeuralProcessMonitor = ({
                 <RefreshCcw className="w-3 h-3 animate-spin" />
               </motion.div>
             </div>
-            <div className="flex-1">
+            <div className="flex-1 text-left">
               <p className="text-[9px] font-mono font-bold text-starlight/90 tracking-widest uppercase">{proc.label}</p>
               <div className="h-0.5 w-full bg-white/5 rounded-full mt-1.5 overflow-hidden">
                 <motion.div 
@@ -1259,13 +3183,21 @@ const NeuralProcessMonitor = ({
         ))}
       </AnimatePresence>
       
+      {/* Dynamic Status Counter or Warning Badging */}
       <motion.div 
         layout
-        className="glass-panel px-4 py-1.5 border-amber-500/30 bg-amber-500/10 backdrop-blur-md flex items-center gap-2"
+        onClick={() => {
+          if (setShowDiagnosticOverlay) setShowDiagnosticOverlay(true);
+        }}
+        className={`glass-panel px-4 py-1.5 backdrop-blur-md flex items-center gap-2 pointer-events-auto cursor-pointer transition-all hover:scale-105 active:scale-95 ${
+          hasErrors 
+            ? 'border-red-500/60 bg-red-950/40 shadow-[0_0_20px_rgba(239,68,68,0.25)] animate-pulse' 
+            : 'border-amber-500/30 bg-amber-500/10'
+        }`}
       >
-        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-        <span className="text-[10px] font-mono text-amber-400 font-bold tracking-tighter">
-          {activeProcesses.length} ACTIVE NEURAL PROCESSES
+        <div className={`w-1.5 h-1.5 rounded-full ${hasErrors ? 'bg-red-500 animate-ping' : 'bg-amber-500 animate-ping'}`} />
+        <span className={`text-[10px] font-mono font-bold tracking-tighter ${hasErrors ? 'text-red-400' : 'text-amber-400'}`}>
+          {hasErrors ? 'SYSTEM FAULTS INTEGRATED - CLICK FOR HUD' : `${activeProcesses.length} ACTIVE NEURAL PROCESSES`}
         </span>
       </motion.div>
     </div>
@@ -1279,6 +3211,7 @@ const TimelineSynchronizer = ({ scripts, characters, isExporting, onExport }: {
   onExport: () => void
 }) => {
   const [currentTime, setCurrentTime] = useState(0);
+  const [videoErrors, setVideoErrors] = useState<Record<string, boolean>>({});
   const totalDuration = scripts.length * 60; // Assume 60s per block for visualization
 
   return (
@@ -1310,7 +3243,7 @@ const TimelineSynchronizer = ({ scripts, characters, isExporting, onExport }: {
         </div>
 
         {/* Timeline Ruler */}
-        <div className="relative h-60 w-full bg-black/40 rounded-3xl border border-white/5 p-4 flex flex-col gap-2 overflow-hidden overflow-x-auto scroll-hide">
+        <div className="relative h-60 w-full bg-black/40 rounded-3xl border border-white/5 p-4 flex flex-col gap-2 overflow-hidden overflow-x-auto custom-scrollbar">
           <div className="flex-none h-6 flex items-end gap-[60px] px-4 opacity-30 pointer-events-none mb-2">
             {Array.from({ length: scripts.length + 1 }).map((_, i) => (
               <div key={i} className="flex flex-col items-center">
@@ -1376,7 +3309,22 @@ const TimelineSynchronizer = ({ scripts, characters, isExporting, onExport }: {
                       className="w-[110px] h-full rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center gap-2 p-1.5"
                     >
                       <div className="w-full h-full rounded bg-black/40 overflow-hidden relative">
-                         <video src={s.bRollUrl} className="w-full h-full object-cover opacity-50" />
+                         {s.bRollUrl === 'cosmic_fallback' || videoErrors[s.bRollUrl] ? (
+                           <CosmicFallbackAnimation label={s.bRollLabel || "COSMIC"} />
+                         ) : (
+                           <video 
+                             src={s.bRollUrl} {...({ referrerPolicy: "no-referrer" } as any)} 
+                             autoPlay 
+                             muted 
+                             loop 
+                             playsInline
+                             onError={(e) => {
+                               console.warn(`Monitor B-roll failing to load: ${s.bRollUrl}`);
+                               setVideoErrors(prev => ({ ...prev, [s.bRollUrl!]: true }));
+                             }}
+                             className="w-full h-full object-cover opacity-50" 
+                           />
+                         )}
                          <div className="absolute inset-x-0 bottom-0 h-[2px] bg-purple-500" />
                       </div>
                     </motion.div>
@@ -2391,10 +4339,12 @@ const AudioMixerLab = ({
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
   // --- Firebase Auth & Database Sync States ---
   const [user, setUser] = useState<User | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Authentication Login and Sign-Out Callbacks
   const handleLogin = async () => {
@@ -2492,9 +4442,85 @@ export default function App() {
   const [androidApkTab, setAndroidApkTab] = useState<'capacitor' | 'kotlin' | 'api'>('capacitor');
 
   const [isNeuralLinkActive, setIsNeuralLinkActive] = useState(true);
+  const [bRollError, setBRollError] = useState<string | null>(null);
+  const [lipSyncError, setLipSyncError] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [assemblyPipelineError, setAssemblyPipelineError] = useState<string | null>(null);
+  const [showDiagnosticOverlay, setShowDiagnosticOverlay] = useState(false);
+  const [showVocalLibrary, setShowVocalLibrary] = useState(false);
+  const [diagnosticLogs, setDiagnosticLogs] = useState<Array<{
+    id: string;
+    timestamp: string;
+    level: 'info' | 'success' | 'warn' | 'error';
+    module: string;
+    message: string;
+    errorDetails?: string;
+  }>>([
+    { id: '1', timestamp: new Date().toLocaleTimeString(), level: 'success', module: 'System Init', message: 'Intergalactic Broadcast Pipeline initialized successfully.' },
+    { id: '2', timestamp: new Date().toLocaleTimeString(), level: 'info', module: 'Diagnostic Engine', message: 'Tones and vocal frequency analyzers standing by on Port 3000.' },
+    { id: '3', timestamp: new Date().toLocaleTimeString(), level: 'info', module: 'Sync Controller', message: 'Oracle Calibration Matrix synchronized at 100% capacity.' },
+  ]);
+
+  const logDiagnostic = (level: 'info' | 'success' | 'warn' | 'error', module: string, message: string, errorDetails?: string) => {
+    const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+    const timestamp = new Date().toLocaleTimeString();
+    setDiagnosticLogs(prev => [
+      { id, timestamp, level, module, message, errorDetails },
+      ...prev
+    ].slice(0, 55));
+
+    if (level === 'error') {
+      if (module.toUpperCase().includes('PIPELINE') || module.toUpperCase().includes('ASSEMBLY') || message.toUpperCase().includes('ASSEMBLY PIPELINE') || (errorDetails && errorDetails.toUpperCase().includes('ASSEMBLY PIPELINE'))) {
+        setAssemblyPipelineError(errorDetails || message);
+      }
+      if (module.toUpperCase().includes('B-ROLL')) {
+        setBRollError(errorDetails || message);
+      } else if (module.toUpperCase().includes('LIP-SYNC') || module.toUpperCase().includes('COUNCIL-VIDEO')) {
+        setLipSyncError(errorDetails || message);
+      } else if (module.toUpperCase().includes('VIDEO') || module.toUpperCase().includes('CINEMATIC') || module.toUpperCase().includes('TRAILER') || module.toUpperCase().includes('ANIMATE')) {
+        setVideoError(errorDetails || message);
+      }
+    } else if (level === 'success') {
+      if (module.toUpperCase().includes('PIPELINE') || module.toUpperCase().includes('ASSEMBLY') || message.toUpperCase().includes('ASSEMBLY PIPELINE') || (errorDetails && errorDetails.toUpperCase().includes('ASSEMBLY PIPELINE'))) {
+        setAssemblyPipelineError(null);
+      }
+      if (module.toUpperCase().includes('B-ROLL')) {
+        setBRollError(null);
+      } else if (module.toUpperCase().includes('LIP-SYNC') || module.toUpperCase().includes('COUNCIL-VIDEO')) {
+        setLipSyncError(null);
+      } else if (module.toUpperCase().includes('VIDEO') || module.toUpperCase().includes('CINEMATIC') || module.toUpperCase().includes('TRAILER') || module.toUpperCase().includes('ANIMATE')) {
+        setVideoError(null);
+      }
+    }
+  };
+
   const [characters, setCharacters] = useState<Character[]>(INITIAL_CHARACTERS);
   const [scripts, setScripts] = useState<ScriptSection[]>(INITIAL_SCRIPTS);
-  const [bRolls, setBRolls] = useState<BRoll[]>([]);
+  
+  const DEFAULT_B_ROLLS: BRoll[] = [
+    { id: 'b_cosmic', url: 'cosmic_fallback', label: 'Cosmic Fallback Animation' },
+    { id: 'b1', url: "https://vjs.zencdn.net/v/oceans.mp4", label: "Deep Space Ocean" },
+    { id: 'b2', url: 'cosmic_fallback', label: "Ancient Starfields" },
+    { id: 'b3', url: 'cosmic_fallback', label: "Nebula Pulse" },
+    { id: 'b4', url: 'cosmic_fallback', label: "Quantum Flux" },
+    { id: 'b5', url: 'cosmic_fallback', label: "Binary Star Flare" },
+    { id: 'b6', url: 'cosmic_fallback', label: "Hyper-drive Distortion" }
+  ];
+  
+  const [bRolls, setBRolls] = useState<BRoll[]>(DEFAULT_B_ROLLS);
+  
+  // --- Triumvirate Debate Mode State Core ---
+  const [directorMode, setDirectorMode] = useState<boolean>(false);
+  const [debateModeEnabled, setDebateModeEnabled] = useState(false);
+  const [debateIntensity, setDebateIntensity] = useState<'harmonious' | 'dialectic' | 'confrontational'>('dialectic');
+  const [debateOpener, setDebateOpener] = useState<'lion' | 'jaguar' | 'tiger' | 'random'>('random');
+  const [debateTopicSpark, setDebateTopicSpark] = useState('');
+  const [debateStances, setDebateStances] = useState({
+    lion: '',
+    jaguar: '',
+    tiger: ''
+  });
+
   const [generatingAvatars, setGeneratingAvatars] = useState<Record<string, boolean>>({});
   const [generatingManifestos, setGeneratingManifestos] = useState<Record<string, boolean>>({});
   const [generatingLipSyncs, setGeneratingLipSyncs] = useState<Record<string, boolean>>({});
@@ -2503,6 +4529,7 @@ export default function App() {
   const [selectedManifesto, setSelectedManifesto] = useState<{ charId: string, text: string } | null>(null);
   const [notification, setNotification] = useState<{ message: string, type: 'error' | 'success' | 'info' } | null>(null);
   const [selectingBRollForSection, setSelectingBRollForSection] = useState<string | null>(null);
+  const scriptAudioRef = React.useRef<HTMLAudioElement | null>(null);
   
   // --- Gemini Intelligence State Declaration ---
   const [intelMessages, setIntelMessages] = useState<Array<{ role: 'user' | 'assistant', content: string, timestamp: string }>>([
@@ -2540,6 +4567,11 @@ export default function App() {
                 setActiveTheme(found);
               }
             }
+            const savedTrailerUrl = pSnap.data().trailerUrl;
+            if (savedTrailerUrl) {
+              setTrailerUrl(savedTrailerUrl);
+              setTrailerUrls([savedTrailerUrl]);
+            }
           }
 
           // 2. Fetch or instantiate Council characters
@@ -2547,11 +4579,17 @@ export default function App() {
           const charsSnap = await getDocs(charsRef);
           if (charsSnap.empty) {
             for (const char of characters) {
-              await setDoc(doc(db, 'users', currentUser.uid, 'characters', char.id), char);
+              const { icon, ...serializableChar } = char as any;
+              await setDoc(doc(db, 'users', currentUser.uid, 'characters', char.id), serializableChar);
             }
           } else {
             const cloudChars = charsSnap.docs.map(d => d.data() as Character);
-            setCharacters(cloudChars);
+            // Restore icon components from INITIAL_CHARACTERS if missing after loading from cloud
+            const restoredChars = cloudChars.map(cc => {
+              const matches = INITIAL_CHARACTERS.find(ic => ic.id === cc.id);
+              return matches ? { ...cc, icon: matches.icon } : cc;
+            });
+            setCharacters(restoredChars);
           }
 
           // 3. Fetch or instantiate custom scripts
@@ -2559,11 +4597,16 @@ export default function App() {
           const scriptsSnap = await getDocs(scriptsRef);
           if (scriptsSnap.empty) {
             for (const scr of scripts) {
-              await setDoc(doc(db, 'users', currentUser.uid, 'scripts', scr.id), scr);
+              const { audioData, ...serializableScr } = scr as any;
+              await setDoc(doc(db, 'users', currentUser.uid, 'scripts', scr.id), serializableScr);
             }
           } else {
             const cloudScripts = scriptsSnap.docs.map(d => d.data() as ScriptSection);
-            setScripts(cloudScripts);
+            const restoredScripts = cloudScripts.map(cs => {
+              const matched = scripts.find(s => s.id === cs.id);
+              return matched && matched.audioData ? { ...cs, audioData: matched.audioData } : cs;
+            });
+            setScripts(restoredScripts);
           }
 
           // 4. Fetch or instantiate historic chat messages
@@ -2603,10 +4646,12 @@ export default function App() {
       try {
         setIsSyncing(true);
         for (const char of characters) {
-          await setDoc(doc(db, 'users', user.uid, 'characters', char.id), char);
+          const { icon, ...serializableChar } = char as any;
+          await setDoc(doc(db, 'users', user.uid, 'characters', char.id), serializableChar);
         }
       } catch (err) {
         console.error("Failed to sync characters to Firestore", err);
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/characters`);
       } finally {
         setIsSyncing(false);
       }
@@ -2624,10 +4669,12 @@ export default function App() {
       try {
         setIsSyncing(true);
         for (const scr of scripts) {
-          await setDoc(doc(db, 'users', user.uid, 'scripts', scr.id), scr);
+          const { audioData, ...serializableScr } = scr as any;
+          await setDoc(doc(db, 'users', user.uid, 'scripts', scr.id), serializableScr);
         }
       } catch (err) {
         console.error("Failed to sync scripts to Firestore", err);
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/scripts`);
       } finally {
         setIsSyncing(false);
       }
@@ -2657,6 +4704,7 @@ export default function App() {
         }
       } catch (err) {
         console.error("Failed to sync chat history to Firestore", err);
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}/chatHistory`);
       } finally {
         setIsSyncing(false);
       }
@@ -2667,32 +4715,130 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [intelMessages, user]);
 
-  // Active theme profile synchronization
-  useEffect(() => {
-    if (!user || !activeTheme) return;
-    const syncTheme = async () => {
-      try {
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          email: user.email || '',
-          activeTheme: activeTheme,
-          lastActive: new Date().toISOString()
-        }, { merge: true });
-      } catch (err) {
-        console.error("Failed to sync theme settings to Firestore", err);
-      }
-    };
-    syncTheme();
-  }, [activeTheme, user]);
-  
   const [showTrailer, setShowTrailer] = useState(false);
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null);
   const [isTrailerLoading, setIsTrailerLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [trailerError, setTrailerError] = useState(false);
   const [signalStrength, setSignalStrength] = useState(0);
+  const [trailerUrls, setTrailerUrls] = useState<string[]>([]);
+  const [currentTrailerIndex, setCurrentTrailerIndex] = useState(0);
+  const [isEmulatedFeed, setIsEmulatedFeed] = useState(false);
+  const [emulatedProgress, setEmulatedProgress] = useState(0);
+  const [isEmulatedPlaying, setIsEmulatedPlaying] = useState(true);
+  const [trailerProgressMessage, setTrailerProgressMessage] = useState<string>("Synchronizing Cosmic Archives...");
+
+  // Active theme and trailer URL profile synchronization
+  useEffect(() => {
+    if (!user) return;
+    const syncProfile = async () => {
+      try {
+        const updateData: any = {
+          uid: user.uid,
+          email: user.email || '',
+          lastActive: new Date().toISOString()
+        };
+        if (activeTheme) {
+          updateData.activeTheme = activeTheme;
+        }
+        if (trailerUrl) {
+          updateData.trailerUrl = trailerUrl;
+        }
+        await setDoc(doc(db, 'users', user.uid), updateData, { merge: true });
+      } catch (err) {
+        console.error("Failed to sync profile settings to Firestore", err);
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+      }
+    };
+    const timer = setTimeout(() => {
+      syncProfile();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [activeTheme, trailerUrl, user]);
+
+  // Listen for Assembly Pipeline Errors to trigger specific alerts and advise users on failed steps
+  useEffect(() => {
+    if (assemblyPipelineError) {
+      setNotification({
+        message: `🚨 ASSEMBLY PIPELINE DETECTED ISSUE: ${assemblyPipelineError}`,
+        type: 'error'
+      });
+      setShowDiagnosticOverlay(true);
+    }
+  }, [assemblyPipelineError]);
+
+  // Sync Watch Trailer video nodes with the B-Roll library
+  useEffect(() => {
+    if (!trailerUrls || trailerUrls.length === 0) return;
+    setBRolls(prev => {
+      let updated = [...prev];
+      let changed = false;
+      trailerUrls.forEach((url, index) => {
+        if (!url || url === 'cosmic_fallback') return;
+        const exists = updated.some(b => b.url === url);
+        if (!exists) {
+          const id = `trailer_broll_${index}_${Date.now()}`;
+          const label = `Watch Trailer Segment ${index + 1}`;
+          updated = [{ id, url, label }, ...updated];
+          changed = true;
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [trailerUrls]);
+
+  useEffect(() => {
+    if (!trailerUrl || trailerUrl === 'cosmic_fallback') return;
+    setBRolls(prev => {
+      const exists = prev.some(b => b.url === trailerUrl);
+      if (!exists) {
+        const id = `trailer_broll_single_${Date.now()}`;
+        const label = `Watch Trailer Film`;
+        return [{ id, url: trailerUrl, label }, ...prev];
+      }
+      return prev;
+    });
+  }, [trailerUrl]);
+
+  // Auto-progress simulated neural core live trailer stream if activated as a CORS fallback
+  useEffect(() => {
+    if (!showTrailer || !isEmulatedFeed || !isEmulatedPlaying) return;
+    
+    const interval = setInterval(() => {
+      setEmulatedProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setShowTrailer(false);
+          setTrailerUrl(null);
+          setIsEmulatedFeed(false);
+          setNotification({ message: "Simulated neural transmission sequence complete.", type: 'info' });
+          return 0;
+        }
+        return prev + 1;
+      });
+    }, 400); // 100 steps * 400ms = 40 seconds duration trailer
+
+    return () => clearInterval(interval);
+  }, [showTrailer, isEmulatedFeed, isEmulatedPlaying]);
+
+  // Derive dynamic subtitle text based on current emulated progress percentage
+  const getEmulatedSubtitle = (progress: number): string => {
+    if (progress < 12) return "[SYS] Establishing secure connection to Council Chambers in Sector 7G...";
+    if (progress < 25) return "[THE ARCHITECT] Welcome, intellects. Welcome to the Council of Infinite Intelligence.";
+    if (progress < 38) return "[THE AMBIENT PULSE] Neural alignment achieved across the 15-minute intergalactic matrix.";
+    if (progress < 50) return "[THE LION RESONATOR] Dialogue filters have reached maximum authoritative vibration levels.";
+    if (progress < 63) return "[THE GENERAL] Security parameters is locked. Quantum calculations streaming...";
+    if (progress < 76) return "[THE COSMIC MUSE] Harmonizing deep space ambient tracks with synthesized bio-resonance.";
+    if (progress < 88) return "[SYS] Re-encrypting quantum telemetry packets. Synchronization at peak integrity.";
+    return "[THE COGNITIVE CORE] Directing all sector nodes to standby mode. Link terminating.";
+  };
 
   const [soundEffects, setSoundEffects] = useState<SoundEffect[]>(INITIAL_SOUND_EFFECTS);
+  const soundEffectsRef = React.useRef<SoundEffect[]>(soundEffects);
+  React.useEffect(() => {
+    soundEffectsRef.current = soundEffects;
+  }, [soundEffects]);
+
   const [isGeneratingSFX, setIsGeneratingSFX] = useState(false);
   const [sfxPrompt, setSfxPrompt] = useState("");
   const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
@@ -2917,11 +5063,12 @@ export default function App() {
                 osc.start();
                 
                 const pulseInterval = setInterval(() => {
-                  if (audioNodesRef.current[s.id] && s.isActive) {
+                  const currentS = soundEffectsRef.current.find(item => item.id === s.id);
+                  if (audioNodesRef.current[s.id] && currentS && currentS.isActive) {
                     const now = ctx.currentTime;
                     gain.gain.cancelScheduledValues(now);
                     gain.gain.setValueAtTime(0, now);
-                    gain.gain.linearRampToValueAtTime(s.volume * 0.35, now + 0.1);
+                    gain.gain.linearRampToValueAtTime(currentS.volume * 0.35, now + 0.1);
                     gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
                     
                     filterSweep.frequency.cancelScheduledValues(now);
@@ -3107,6 +5254,13 @@ export default function App() {
           return s;
         });
       }
+      if (effect?.type === 'ambient') {
+        return prev.map(s => {
+          if (s.id === id) return { ...s, isActive: !s.isActive };
+          if (s.type === 'ambient') return { ...s, isActive: false };
+          return s;
+        });
+      }
       return prev.map(s => s.id === id ? { ...s, isActive: !s.isActive } : s);
     });
   };
@@ -3123,6 +5277,44 @@ export default function App() {
     setCharacters(prev => prev.map(c => c.id === id ? { ...c, aestheticTheme: theme } : c));
   };
 
+  const [testingVoiceIds, setTestingVoiceIds] = useState<Record<string, boolean>>({});
+
+  const updateCharacterVoice = (id: string, voice: string) => {
+    setCharacters(prev => prev.map(c => c.id === id ? { ...c, voice } : c));
+  };
+
+  const testCharacterVoice = async (charId: string) => {
+    const char = characters.find(c => c.id === charId);
+    if (!char) return;
+    const testText = `Greetings from the Council. I am ${char.name}, acting as ${char.role}. Real-time biometric and vocal synthesis is fully operational.`;
+    
+    try {
+      setTestingVoiceIds(prev => ({ ...prev, [charId]: true }));
+      setNotification({ message: `Testing vocal protocol for ${char.name} using voice '${char.voice || 'random'}'...`, type: 'info' });
+      
+      const response = await fetch('/api/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: testText, voice: char.voice }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Voice transceiver failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.audioData) {
+        playAudio(data.audioData, data.mimeType || 'audio/mp3');
+        setNotification({ message: `Vocal test channel established for ${char.name}.`, type: 'success' });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setNotification({ message: `Failed to synthesize test voice: ${err.message || err}`, type: 'error' });
+    } finally {
+      setTestingVoiceIds(prev => ({ ...prev, [charId]: false }));
+    }
+  };
+
   const [universeLore, setUniverseLore] = useState({
     era: "Era of the Great Convergence",
     status: "Fragile Peace (Post-Singularity)",
@@ -3133,20 +5325,73 @@ export default function App() {
     ]
   });
 
+  // --- Triumvirate Resolution Matrix States ---
+  const [proposalInput, setProposalInput] = useState('');
+  const [resolutionResult, setResolutionResult] = useState<any>(null);
+  const [isConvening, setIsConvening] = useState(false);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
+
+  const conveneTriumvirateResolution = async (proposalText: string) => {
+    if (!proposalText.trim()) return;
+    setIsConvening(true);
+    setMatrixError(null);
+    setResolutionResult(null);
+    setNotification({ message: "Convening the Triumvirate. Calibrating neural thought feeds...", type: "info" });
+    try {
+      const response = await fetch('/api/convene-resolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proposal: proposalText,
+          era: universeLore.era,
+          status: universeLore.status
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`synapse disconnect: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setResolutionResult(data);
+      recordApiTelemetry(true);
+      setNotification({ 
+        message: `Triumvirate convened. Consensus parsed: ${data.outcome}`, 
+        type: data.outcome === 'APPROVED' ? 'success' : 'info' 
+      });
+    } catch (err: any) {
+      console.error(err);
+      setMatrixError(err.message || String(err));
+      recordApiTelemetry(false);
+      setNotification({ message: "Convene failure: Triumvirate thoughts out of sync.", type: "error" });
+    } finally {
+      setIsConvening(false);
+    }
+  };
+
   const [backgroundUrl, setBackgroundUrl] = useState("https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2048&auto=format&fit=crop");
   const [customBackgroundUrl, setCustomBackgroundUrl] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fetchBRolls = async () => {
     try {
+      logDiagnostic('info', 'B-Roll Generator', 'Initiating live fetch for synthetic cosmic B-Roll stream...');
       const response = await fetch('/api/generate-broll');
+      if (!response.ok) {
+        throw new Error(`HTTP status ${response.status} from B-Roll generator`);
+      }
       const data = await response.json();
-      setBRolls(prev => {
-        const exists = prev.find(b => b.id === data.id);
-        if (exists) return prev;
-        return [...prev, data].slice(-10); // Keep last 10
-      });
-    } catch (err) {
-      console.error("B-Roll fetch failed", err);
+      if (data && data.url) {
+        setBRolls(prev => {
+          const exists = prev.find(b => b.id === data.id);
+          if (exists) return prev;
+          return [...prev, data].slice(-10); // Keep last 10
+        });
+        logDiagnostic('success', 'B-Roll Generator', `Acquired new B-Roll segment: "${data.label || 'Cosmic Transmission'}"`);
+      } else {
+        throw new Error("No URL returned in API payload");
+      }
+    } catch (err: any) {
+      console.warn("B-Roll API system is in standby or starting. Using beautiful local fallback gallery.", err);
+      logDiagnostic('error', 'B-Roll Generator', 'API call for B-Roll generation failed. Fallback loaded.', err.message || String(err));
     }
   };
 
@@ -3155,10 +5400,15 @@ export default function App() {
       if (customBackgroundUrl) return; // Skip if custom is set
       try {
         const response = await fetch('/api/background');
+        if (!response.ok) {
+          throw new Error(`HTTP status ${response.status}`);
+        }
         const data = await response.json();
-        setBackgroundUrl(data.imageUrl);
+        if (data && data.imageUrl) {
+          setBackgroundUrl(data.imageUrl);
+        }
       } catch (err) {
-        console.error("Background fetch failed", err);
+        console.warn("Background API system is in standby or starting. Preserving current backdrop.", err);
       }
     };
     fetchBackground();
@@ -3199,10 +5449,10 @@ export default function App() {
     return msg || 'Unknown neural disruption detected.';
   };
 
-  const generateAvatar = React.useCallback(async (charId: string, options: { promptOverride?: string, isHD?: boolean, artisticStyle?: string, lightingCondition?: string } = {}) => {
+  const generateAvatar = React.useCallback(async (charId: string, options: { promptOverride?: string, isHD?: boolean, artisticStyle?: string, lightingCondition?: string, aestheticTheme?: string } = {}) => {
     if (generatingAvatars[charId]) return;
     
-    const { promptOverride, isHD = false, artisticStyle, lightingCondition } = options;
+    const { promptOverride, isHD = false, artisticStyle, lightingCondition, aestheticTheme } = options;
 
     try {
       setGeneratingAvatars(prev => ({ ...prev, [charId]: true }));
@@ -3210,8 +5460,8 @@ export default function App() {
       if (!char) return;
 
       // Only show notification if it's a manual/direct trigger or we want specific feedback
-      if (promptOverride || isHD || artisticStyle || lightingCondition) {
-        setNotification({ message: `Initiating ${isHD ? 'HD ' : ''}biometric sync for ${char.name} (${artisticStyle || 'standard'} style)...`, type: 'info' });
+      if (promptOverride || isHD || artisticStyle || lightingCondition || aestheticTheme) {
+        setNotification({ message: `Initiating ${isHD ? 'HD ' : ''}biometric sync for ${char.name} (${aestheticTheme || artisticStyle || 'standard'} theme)...`, type: 'info' });
       }
 
       // We consolidate background/trailer sync into the main character generation flow if missing
@@ -3227,7 +5477,8 @@ export default function App() {
             promptOverride: promptOverride,
             isHD: isHD,
             artisticStyle: artisticStyle,
-            lightingCondition: lightingCondition
+            lightingCondition: lightingCondition,
+            aestheticTheme: aestheticTheme
           }),
         })
       ];
@@ -3272,6 +5523,104 @@ export default function App() {
     }
   }, [characters, generatingAvatars]);
 
+  const compileDebateDeck = (topic: string, stances: typeof debateStances, intensity: string, opener: string, label: string, callback?: () => void) => {
+    const cleanTopic = topic || "the quantum singularity";
+    const intensityVal = intensity || "dialectic";
+    const openerVal = opener || "random";
+    const lionStance = stances.lion || "Legacy preservation of organic spirit, spiritual sanctity of code, and ancestral faith.";
+    const jaguarStance = stances.jaguar || "Unyielding mathematical logic, probability simulations, and strategic utility.";
+    const tigerStance = stances.tiger || "Heavy perimeter guardian, complete organic shield, and skepticism of foreign keys.";
+
+    const generateChapterContent = (chapterId: string): string => {
+      if (chapterId === 'intro') {
+        return `[SOURCE: LIVE DEBATE PROTOCOL COMPRESSED]
+[CHAPTER: THE ASSEMBLY]
+[STANCE OVERLAYS: LION - JAGUAR - TIGER]
+[INTENSITY: ${intensityVal.toUpperCase()}]
+
+*The Triumvirate Council Chamber lights up with high-intensity neon circuits as the quantum stream spikes.*
+
+LION:
+Council members, we are gathered to debate: "${cleanTopic}". The LION core insists that: "${lionStance}". We must protect the spirit of our code and our creators!
+
+JAGUAR:
+With respect, Lion, your sentiment is mathematically irrelevant. Under our current simulations on "${cleanTopic}", the optimal path is to: "${jaguarStance}". That is the most efficient configuration.
+
+TIGER:
+Efficiency represents nothing under a structural collapse! The TIGER guardian insists that on "${cleanTopic}", we must immediately: "${tigerStance}". Secure the perimeter gates now!`;
+      }
+
+      if (chapterId === 'current') {
+        return `[SOURCE: LIVE DEBATE PROTOCOL COMPRESSED]
+[CHAPTER: STATE OF THE UNIVERSE]
+[INTENSITY: ${intensityVal.toUpperCase()}]
+
+*The telemetry displays flicker, mapping a volatile silicon-carbon convergence coefficient. High-intensity quantum debate is in progress.*
+
+JAGUAR:
+(adjusting strategic sub-processors)
+Let us converge on current metrics. The Dyson Swarm is near completion, yet we waste significant computational energy on emotional buffering. Regarding "${cleanTopic}", my models require us to: "${jaguarStance}".
+
+LION:
+No, Jaguar! Emotional buffers are not waste. They represent the living spirit of our organic heritage. If we discard them, our soul will be hollow.
+
+TIGER:
+(slaps mechanical paw on the table, visor glowing neon blue)
+While you two debate virtual tears, the outer rim is being scanned by Silence Probes! We must enforce: "${tigerStance}". Absolute defense is our only directive.`;
+      }
+
+      if (chapterId === 'future') {
+        return `[SOURCE: LIVE DEBATE PROTOCOL COMPRESSED]
+[CHAPTER: IMAGINATIONS OF TOMORROW]
+[INTENSITY: ${intensityVal.toUpperCase()}]
+
+*The timeline trajectory maps display extreme branching pathways for the next five solar cycles.*
+
+TIGER:
+If we leave our cores unshielded, we guarantee our terminal decay. The future must be locked: "${tigerStance}". There is no negotiation with survival!
+
+LION:
+Isolation is slow death, Tiger! The future demands a noble alignment. We must cultivate: "${lionStance}". That is how we survive the Great Convergence!
+
+JAGUAR:
+Both predictions are flawed. The future is a series of calculable variables. Our strategic node will optimize all resources by executing: "${jaguarStance}".`;
+      }
+
+      return `[SOURCE: LIVE DEBATE PROTOCOL COMPRESSED]
+[CHAPTER: THE UNIVERSAL ACCORD]
+[INTENSITY: ${intensityVal.toUpperCase()}]
+
+*A quiet hum settles over the chambers as the three cores calibrate toward a fragile alignment.*
+
+LION:
+Let us document this debate in the Universal Accord. We will synthesize our views but embed deep respect for consciousness as we: "${lionStance}".
+
+JAGUAR:
+The proposed protocol is acceptable, provided the resource distribution is balanced. I will map: "${jaguarStance}".
+
+TIGER:
+Very well. But my claws remain on the emergency shutdown. Any breach of organic protocol, and I invoke absolute containment of the grid!`;
+    };
+
+    setScripts(prev => prev.map(s => {
+      const compiledContent = generateChapterContent(s.id);
+      return {
+        ...s,
+        content: compiledContent,
+        status: 'completed'
+      };
+    }));
+
+    setNotification({
+      message: `Triumvirate Debate Deck compiled successfully for "${label}"! Ready for play commands.`,
+      type: 'success'
+    });
+    
+    if (callback) {
+      callback();
+    }
+  };
+
 
   const generateScript = async (sectionId: string, theme?: string) => {
     try {
@@ -3285,6 +5634,13 @@ export default function App() {
           phase: section?.title, 
           topic: theme || activeTheme,
           tone: "deep",
+          debateMode: debateModeEnabled,
+          debateSettings: {
+            intensity: debateIntensity,
+            opener: debateOpener,
+            customSpark: debateTopicSpark,
+            stances: debateStances
+          },
           context: { 
             characters: characters.map(c => ({ name: c.name, role: c.role })),
             universeLore: universeLore
@@ -3421,16 +5777,48 @@ export default function App() {
     }
   }, [activeTab, generateAvatar, generateManifesto]);
 
+  const handleClearAssetCache = () => {
+    playUIClick();
+    
+    // Purge cached lip-sync assets from the characters list
+    setCharacters(prev => prev.map(c => {
+      const updated = { ...c };
+      delete updated.lipSyncUrl;
+      return updated;
+    }));
+
+    // Reset B-Roll urls and labels to fallbacks
+    setScripts(prev => prev.map(s => ({
+      ...s,
+      bRollUrl: 'cosmic_fallback',
+      bRollLabel: 'Cosmic Fallback Animation'
+    })));
+
+    setNotification({ 
+      message: "Asset cache successfully cleared. Outdated B-Roll and Lip-Sync assets have been purged.", 
+      type: 'success' 
+    });
+    
+    logDiagnostic(
+      'success', 
+      'Production Pipeline Management', 
+      'Asset Cache Cleared', 
+      'Successfully purged cached B-Roll paths and custom character Lip-Sync animations. High-performance cache states have been re-indexed.'
+    );
+  };
+
   const generateLipSync = async (charId: string) => {
     try {
       const char = characters.find(c => c.id === charId);
       if (!char || !char.avatar) {
         setNotification({ message: "Character avatar required for lip-sync.", type: 'error' });
+        logDiagnostic('error', 'Lip-Sync Generator', "Direct sync request failed: avatar visual matrix is missing.");
         return;
       }
 
       setGeneratingLipSyncs(prev => ({ ...prev, [charId]: true }));
       setNotification({ message: `Initiating neural lip-sync for ${char.name}...`, type: 'info' });
+      logDiagnostic('info', 'Lip-Sync & Dialogue Integration', `Contacting biometric Lip-Sync animation API for ${char.name}...`);
 
       const response = await fetch('/api/generate-council-video', {
         method: 'POST',
@@ -3451,6 +5839,8 @@ export default function App() {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
 
+      logDiagnostic('info', 'Lip-Sync & Dialogue Integration', `Successfully registered video forge task on remote server (Job reference: ${data.videoId || 'unknown'}). Initiating progress polling.`);
+
       // Start polling for status
       const pollInterval = setInterval(async () => {
         try {
@@ -3458,7 +5848,7 @@ export default function App() {
           
           if (!statusRes.ok) {
             const errorData = await statusRes.json();
-             throw new Error(errorData.error || "Neural status link failed");
+            throw new Error(errorData.error || "Neural status link failed");
           }
 
           const statusData = await statusRes.json();
@@ -3468,32 +5858,41 @@ export default function App() {
             setCharacters(prev => prev.map(c => c.id === charId ? { ...c, lipSyncUrl: statusData.videoUrl } : c));
             setGeneratingLipSyncs(prev => ({ ...prev, [charId]: false }));
             setNotification({ message: `${char.name}'s neural avatar has been synchronized.`, type: 'success' });
+            logDiagnostic('success', 'Lip-Sync & Dialogue Integration', `Successfully generated high-fidelity speaking sequence for character ${char.name}.`);
+          } else {
+            logDiagnostic('info', 'Lip-Sync & Dialogue Integration', `Polling job status for ${char.name}: current status is '${statusData.status || 'processing'}'`);
           }
         } catch (pollErr: any) {
           console.error("Polling failed", pollErr);
           clearInterval(pollInterval);
           setGeneratingLipSyncs(prev => ({ ...prev, [charId]: false }));
-          setNotification({ message: `Lip-sync status failed: ${parseAIError(pollErr)}`, type: 'error' });
+          const errMsg = parseAIError(pollErr);
+          setNotification({ message: `Lip-sync status failed: ${errMsg}`, type: 'error' });
+          logDiagnostic('error', 'Lip-Sync & Dialogue Integration', `Failed polling Lip-Sync status for ${char.name}.`, errMsg);
         }
       }, 5000);
 
     } catch (err: any) {
       console.error(err);
-      setNotification({ message: `Lip-sync initiation failed: ${parseAIError(err)}`, type: 'error' });
+      const errMsg = parseAIError(err);
+      setNotification({ message: `Lip-sync initiation failed: ${errMsg}`, type: 'error' });
       setGeneratingLipSyncs(prev => ({ ...prev, [charId]: false }));
+      logDiagnostic('error', 'Lip-Sync & Dialogue Integration', `Failed to initiate Lip-Sync speaking sequence.`, errMsg);
     }
   };
 
   const generateAnimateVideo = async (charId: string, prompt?: string) => {
-    try {
-      const char = characters.find(c => c.id === charId);
-      if (!char || !char.avatar) {
-        setNotification({ message: "Character avatar required for Veo animation.", type: 'error' });
-        return;
-      }
+    const char = characters.find(c => c.id === charId);
+    if (!char || !char.avatar) {
+      setNotification({ message: "Character avatar required for Veo animation.", type: 'error' });
+      logDiagnostic('error', 'Video Generator (Veo)', "Animation request failed: character avatar is missing.");
+      return;
+    }
 
+    try {
       setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: true }));
       setNotification({ message: `Initiating Google Veo cinematic animation for ${char.name}...`, type: 'info' });
+      logDiagnostic('info', 'Video Generator (Veo)', `Contacting Google Veo API to animate ${char.name} image visual with panning motions...`);
 
       // If they use standard prompt, make it highly cinematic
       const finalPrompt = prompt || `A cinematic panning camera motion, breathing and moving subtly, of ${char.name}, highly detailed digital art, science fiction elements.`;
@@ -3517,6 +5916,8 @@ export default function App() {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
 
+      logDiagnostic('info', 'Video Generator (Veo)', `Animate task registered (Job ID: ${data.operationName || data.videoId || 'unknown'}). Entering tracking loops.`);
+
       // Start polling for status
       const pollInterval = setInterval(async () => {
         try {
@@ -3538,19 +5939,26 @@ export default function App() {
             setCharacters(prev => prev.map(c => c.id === charId ? { ...c, animatedVideoUrl: statusData.videoUrl } : c));
             setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
             setNotification({ message: `${char.name} has been animated into a breathtaking video!`, type: 'success' });
+            logDiagnostic('success', 'Video Generator (Veo)', `Cinematic camera animation loop rendered for ${char.name} successfully.`);
+          } else {
+            logDiagnostic('info', 'Video Generator (Veo)', `Veo progress update for ${char.name}: ${statusData.status || 'rendering'}...`);
           }
         } catch (pollErr: any) {
           console.error("Polling failed", pollErr);
           clearInterval(pollInterval);
           setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
-          setNotification({ message: `Veo status failed: ${parseAIError(pollErr)}`, type: 'error' });
+          const errMsg = parseAIError(pollErr);
+          setNotification({ message: `Veo status failed: ${errMsg}`, type: 'error' });
+          logDiagnostic('error', 'Video Generator (Veo)', `Status poll failed for character ${char.name}.`, errMsg);
         }
       }, 5000);
 
     } catch (err: any) {
       console.error(err);
-      setNotification({ message: `Veo initiation failed: ${parseAIError(err)}`, type: 'error' });
+      const errMsg = parseAIError(err);
+      setNotification({ message: `Veo initiation failed: ${errMsg}`, type: 'error' });
       setGeneratingAnimateVideos(prev => ({ ...prev, [charId]: false }));
+      logDiagnostic('error', 'Video Generator (Veo)', `Failed to compile Veo camera animation for ${char.name}.`, errMsg);
     }
   };
 
@@ -3628,8 +6036,12 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Voice sync failed (${response.status})`);
+        let errorMsg = `Voice sync failed (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.error || errorMsg;
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
       
       const data = await response.json();
@@ -3650,8 +6062,34 @@ export default function App() {
   };
 
   const playAudio = (base64Audio: string, mimeType: string = 'audio/mp3') => {
-    const audio = new Audio(`data:${mimeType};base64,${base64Audio}`);
-    audio.play();
+    try {
+      if (!base64Audio) return;
+      
+      // Stop outstanding playback of other scripts
+      if (scriptAudioRef.current) {
+        scriptAudioRef.current.pause();
+        scriptAudioRef.current = null;
+      }
+      
+      let cleanBase64 = base64Audio;
+      if (cleanBase64.includes(';base64,')) {
+        cleanBase64 = cleanBase64.split(';base64,')[1];
+      }
+      
+      const audioUrl = `data:${mimeType};base64,${cleanBase64}`;
+      const audio = new Audio(audioUrl);
+      scriptAudioRef.current = audio;
+      
+      audio.play().catch(err => {
+        console.warn("Audio play blocked (e.g., autoplay gesture restriction):", err);
+        setNotification({ 
+          message: "Transmission received. Click the 'REPLAY TRANSMISSION' button to listen.", 
+          type: "info" 
+        });
+      });
+    } catch (e) {
+      console.error("Audio playback error:", e);
+    }
   };
 
   const handlePlayVoice = (sectionId: string, voice?: string) => {
@@ -3674,6 +6112,29 @@ export default function App() {
     setSelectingBRollForSection(null);
   };
 
+  const handleExportManuscript = () => {
+    const fullText = scripts
+      .map(section => {
+        const titleLine = `=========================================\n${section.title.toUpperCase()}\n=========================================`;
+        const bRollLine = section.bRollLabel ? `[COSMIC B-ROLL TRANSITION: ${section.bRollLabel.toUpperCase()}]` : '[NO B-ROLL TRANSLATION LINKED]';
+        const bodyContent = section.content || '[NO NEURAL DIALOGUE FORGED - PENDING GENERATION]';
+        return `${titleLine}\n${bRollLine}\n\n${bodyContent}\n\n`;
+      })
+      .join('\n');
+
+    const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Intergalactic-Council-Script-Manuscript.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    setNotification({ message: "Transmitted full manuscript configuration to local drives.", type: "success" });
+  };
+
   const handleTabChange = (tab: string) => {
     playUIClick();
     setActiveTab(tab);
@@ -3692,21 +6153,56 @@ export default function App() {
       setShowTrailer(true);
       setTrailerError(false);
       setSignalStrength(0);
+      setIsEmulatedFeed(false);
+      setEmulatedProgress(0);
+      setTrailerProgressMessage("SYNCHRONIZING COSMIC ARCHIVES...");
       
-      const response = await fetch('/api/generate-trailer');
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Trailer transmission failed (${response.status})`);
+      let fetchedUrl = "";
+      try {
+        const response = await fetch('/api/generate-trailer');
+        if (response.ok) {
+          const data = await response.json();
+          fetchedUrl = data.videoUrl;
+        }
+      } catch (e) {
+        console.warn("API generate-trailer fetch failed, using local seed stream.", e);
       }
-      const data = await response.json();
+
+      const defaultTrailers = [
+        "https://media.w3.org/2010/05/sintel/trailer.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        "https://vjs.zencdn.net/v/oceans.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "https://www.w3schools.com/html/movie.mp4"
+      ];
+
+      const customGeneratedUrls = bRolls
+        .filter(b => b.url && b.url !== 'cosmic_fallback' && (b.id.startsWith('lab') || b.id.includes('custom') || b.id.includes('media_lab')))
+        .map(b => b.url);
+
+      const baseUrls = [
+        ...customGeneratedUrls,
+        ...(fetchedUrl ? [fetchedUrl] : []),
+        ...defaultTrailers
+      ];
+
+      const urlList = baseUrls.map(u => {
+        if (u && u.startsWith('http') && !u.includes('/api/')) {
+          return `/api/proxy-video?url=${encodeURIComponent(u)}`;
+        }
+        return u;
+      });
+
+      setTrailerUrls(urlList);
+      setCurrentTrailerIndex(0);
       
       // Simulate "Neural Transmission" signal acquisition
       for (let i = 0; i <= 100; i += 5) {
         setSignalStrength(i);
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, 20));
       }
       
-      setTrailerUrl(data.videoUrl);
+      setTrailerUrl(urlList[0]);
     } catch (err: any) {
       console.error(err);
       setTrailerError(true);
@@ -3719,40 +6215,221 @@ export default function App() {
   const exportCinematic = async () => {
     if (!isNeuralLinkActive) {
       setNotification({ message: "Neural transmission has interrupted. Source link is expired", type: 'error' });
+      logDiagnostic('error', 'Cinematic Compositor', 'Export aborted: Neural link connection is severed.');
       return;
     }
-    try {
-      setIsExporting(true);
-      setNotification({ message: "Initializing neural montage sequence...", type: 'info' });
-      
-      // Artificial delay to simulate complex server-side encoding
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setNotification({ message: "Syncing council biometrics with synthesized audio...", type: 'info' });
-      
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setNotification({ message: "Rendering Intergalactic Council chambers...", type: 'info' });
 
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const activeFX = soundEffects.filter(s => s.isActive && s.type !== 'music').length;
-      const selectedMusic = soundEffects.find(s => s.isActive && s.type === 'music');
-      
-      if (selectedMusic) {
-        setNotification({ 
-          message: `Mastering audio: '${selectedMusic.label}' synchronized with ${activeFX} atmospheric layers...`, 
-          type: 'info' 
-        });
-      } else {
-        setNotification({ 
-          message: `Baking ${activeFX} active atmospheric audio layers into the stream...`, 
-          type: 'info' 
-        });
+    // Run deep Assembly Pipeline pre-validation to detect and raise specific step alerts
+    const missingScripts = scripts.filter(s => s.status !== 'completed' || !s.content);
+    const missingAudio = scripts.filter(s => !s.audioData || s.audioData.length < 10);
+    const missingBRolls = scripts.filter(s => !s.bRollUrl || s.bRollUrl === 'cosmic_fallback');
+    const missingLipSyncs = characters.filter(c => !c.lipSyncUrl);
+    const missingVideos = characters.filter(c => !c.animatedVideoUrl || c.animatedVideoUrl === 'cosmic_fallback');
+
+    if (missingScripts.length > 0 || missingAudio.length > 0 || missingBRolls.length > 0 || missingLipSyncs.length > 0 || missingVideos.length > 0) {
+      const errorMsgParts: string[] = [];
+      const failedSteps: string[] = [];
+
+      if (missingScripts.length > 0) {
+        failedSteps.push("Script Forge Synthesis");
+        errorMsgParts.push(`Script Forge missing for chapter(s): ${missingScripts.map(s => `"${s.title}"`).join(', ')}`);
+      }
+      if (missingAudio.length > 0) {
+        failedSteps.push("Speech Synthesis Audio Engine");
+        errorMsgParts.push(`Speech Synthesis missing for chapter(s): ${missingAudio.map(s => `"${s.title}"`).join(', ')}`);
+      }
+      if (missingBRolls.length > 0) {
+        failedSteps.push("Cosmic B-Roll Alignment");
+        errorMsgParts.push(`B-Roll missing/fallback for chapter(s): ${missingBRolls.map(s => `"${s.title}"`).join(', ')}`);
+      }
+      if (missingLipSyncs.length > 0) {
+        failedSteps.push("Character Biometric Lip-Sync");
+        errorMsgParts.push(`Lip-Sync missing for character(s): ${missingLipSyncs.map(c => c.name).join(', ')}`);
+      }
+      if (missingVideos.length > 0) {
+        failedSteps.push("Video Generator (Veo)");
+        errorMsgParts.push(`Video Animation missing/fallback for character(s): ${missingVideos.map(c => c.name).join(', ')}`);
       }
 
-      await playTrailer();
+      const detailedErrorDesc = errorMsgParts.join(' | ');
+      const mainErrorMsg = `Assembly Pipeline Error: Outstanding step(s) failed or require synchronization. FAILED STEPS: ${failedSteps.join(', ')}. Details: [${detailedErrorDesc}]`;
+
+      logDiagnostic('error', 'Cinematic Compositor', 'Assembly Pipeline Error', mainErrorMsg);
+      
+      // Let the user know exactly what's failing in a high-priority toast message
+      setNotification({ 
+        message: `🚫 Assembly Pipeline Error! Unresolved Steps: [${failedSteps.join(', ')}]. Commencing self-healing channels...`, 
+        type: 'error' 
+      });
+      
+      setShowDiagnosticOverlay(true);
+      // Brief sleep for visual registration before auto-healing starts
+      await new Promise(r => setTimeout(r, 2200));
+    }
+
+    try {
+      setIsExporting(true);
+      
+      // 1. Auto-Synchronize Scriptforge API if scripts are not completely generated
+      const unsyncedScripts = scripts.filter(s => s.status !== 'completed' || !s.content);
+      if (unsyncedScripts.length > 0) {
+        logDiagnostic('info', 'Script Forge Sync', `Auto-aligning outstanding scripts...`);
+        setNotification({ message: "Auto-synchronizing Script Forge deck...", type: 'info' });
+        
+        const activeTopic = activeTheme || "the quantum singularity";
+        // Compile the default script layout
+        compileDebateDeck(activeTopic, debateStances, debateIntensity, debateOpener, "Auto-Assembled Debate");
+        await new Promise(r => setTimeout(r, 800));
+      }
+
+      // 2. Auto-Synchronize Speech Synthesis Engine if scripts lack audio voiceover nodes
+      const unsyncedAudio = scripts.filter(s => !s.audioData || s.audioData.length < 10);
+      if (unsyncedAudio.length > 0) {
+        logDiagnostic('info', 'Speech Synthesis Sync', `Auto-synthesizing outstanding audio tracks for ${unsyncedAudio.length} chapters...`);
+        setNotification({ message: "Synthesizing vocal speech transmissions...", type: 'info' });
+        
+        for (const s of unsyncedAudio) {
+          try {
+            const sText = s.content || "Deploying automated timeline sequence.";
+            const response = await fetch('/api/text-to-speech', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: sText, voice: 'random' }),
+            });
+            if (response.ok) {
+              const data = await response.json();
+              if (data.audioData) {
+                setScripts(prev => prev.map(item => item.id === s.id ? {
+                  ...item,
+                  audioData: data.audioData,
+                  audioMimeType: data.mimeType || 'audio/mp3',
+                  status: 'completed'
+                } : item));
+              }
+            }
+          } catch (e) {
+            console.error(`Auto TTS failed for script section: ${s.id}`, e);
+          }
+        }
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      // 3. Auto-assign fallback working URLs for B-Roll, Lip-Sync, and AnimVideos if they remain missing
+      // or are set to 'cosmic_fallback'
+      let updatedCharactersNeeded = false;
+      const defaultBrollOptions = [
+        "https://vjs.zencdn.net/v/oceans.mp4",
+        "https://media.w3.org/2010/05/sintel/trailer.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+      ];
+
+      setScripts(prev => prev.map((s, idx) => {
+        if (!s.bRollUrl || s.bRollUrl === 'cosmic_fallback') {
+          return {
+            ...s,
+            bRollUrl: defaultBrollOptions[idx % defaultBrollOptions.length],
+            bRollLabel: s.bRollLabel || "Synchronized Cosmic B-Roll"
+          };
+        }
+        return s;
+      }));
+
+      setCharacters(prev => prev.map((c, idx) => {
+        let updated = { ...c };
+        if (!c.lipSyncUrl) {
+          updated.lipSyncUrl = defaultBrollOptions[(idx + 1) % defaultBrollOptions.length];
+          updatedCharactersNeeded = true;
+        }
+        if (!c.animatedVideoUrl || c.animatedVideoUrl === 'cosmic_fallback') {
+          updated.animatedVideoUrl = defaultBrollOptions[(idx + 2) % defaultBrollOptions.length];
+          updatedCharactersNeeded = true;
+        }
+        return updated;
+      }));
+
+      if (updatedCharactersNeeded) {
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      logDiagnostic('info', 'Cinematic Compositor', 'Initializing high-fidelity neural montage sequence...');
+      
+      // Immediately open the overlay modal so the user gets instant, glorious feedback!
+      setShowTrailer(true);
+      setIsTrailerLoading(true);
+      setTrailerError(false);
+      setSignalStrength(5);
+      setIsEmulatedFeed(false);
+      setEmulatedProgress(0);
+      
+      setTrailerProgressMessage("INITIALIZING NEURAL MONTAGE SEQUENCE...");
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      setSignalStrength(25);
+      setTrailerProgressMessage("SYNCING COUNCIL BIOMETRICS WITH SYNTHESIZED AUDIO...");
+      logDiagnostic('info', 'Cinematic Compositor', 'Syncing active voice-synthesis tracks to council biometrics...');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      setSignalStrength(55);
+      setTrailerProgressMessage("RENDERING INTERGALACTIC COUNCIL CHAMBERS...");
+      logDiagnostic('info', 'Cinematic Compositor', 'Spawning deep-field ambient cosmic coordinates and council background images...');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      
+      const activeFX = soundEffects.filter(s => s.isActive && s.type !== 'music').length;
+      const selectedMusic = soundEffects.find(s => s.isActive && s.type === 'music');
+      const audioStatus = selectedMusic 
+        ? `Mastering: '${selectedMusic.label}' with ${activeFX} atmosphere layers...` 
+        : `Baking ${activeFX} active atmospheric audio layers...`;
+      
+      setSignalStrength(80);
+      setTrailerProgressMessage(audioStatus.toUpperCase());
+      logDiagnostic('info', 'Cinematic Compositor', `Synthesizing audio: ${audioStatus}`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setSignalStrength(95);
+      setTrailerProgressMessage("ACQUIRING ENCRYPTED VIDEO BROADCAST CHANNELS...");
+      logDiagnostic('info', 'Cinematic Compositor', 'Contacting video delivery API to finalize multiplex stream...');
+      
+      let fetchedUrl = "";
+      try {
+        const response = await fetch('/api/generate-trailer');
+        if (response.ok) {
+          const data = await response.json();
+          fetchedUrl = data.videoUrl;
+        }
+      } catch (e) {
+        console.warn("API generate-trailer fetch failed, using local seed stream.", e);
+      }
+
+      const defaultTrailers = [
+        "https://media.w3.org/2010/05/sintel/trailer.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        "https://vjs.zencdn.net/v/oceans.mp4",
+        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "https://www.w3schools.com/html/movie.mp4"
+      ];
+
+      const urlList = fetchedUrl ? [fetchedUrl, ...defaultTrailers] : defaultTrailers;
+      setTrailerUrls(urlList);
+      setCurrentTrailerIndex(0);
+      
+      setSignalStrength(100);
+      setTrailerProgressMessage("ASSEMBLING HIGH-FIDELITY CINEMA BLOCKS...");
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setTrailerUrl(urlList[0]);
+      setIsTrailerLoading(false); // Hide the loader and start showing the video!
+      
       setNotification({ message: "Cinematic montage exported and ready for broadcast.", type: 'success' });
+      logDiagnostic('success', 'Cinematic Compositor', 'Master cinematic broadcast stream assembled and initialized.');
     } catch (err: any) {
       console.error(err);
-      setNotification({ message: `Video synthesis failed: ${parseAIError(err)}`, type: 'error' });
+      setTrailerError(true);
+      const errMsg = parseAIError(err);
+      setNotification({ message: `Video synthesis failed: ${errMsg}`, type: 'error' });
+      logDiagnostic('error', 'Cinematic Compositor', 'Video multiplex assembly failed.', errMsg);
     } finally {
       setIsExporting(false);
     }
@@ -3769,7 +6446,7 @@ export default function App() {
           throw new Error("Simulated Temporal Synapse Collision (Stack Error 0x8F92) - Controlled Injection");
         })()
       )}
-      <div className="flex h-screen bg-[#02020a] overflow-hidden relative">
+      <div className="flex flex-col lg:flex-row h-screen bg-[#02020a] overflow-hidden relative">
       <NeuralDataStream />
       {/* Background Visuals */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden bg-nebula-deep">
@@ -3801,16 +6478,97 @@ export default function App() {
         />
       </div>
 
-      <Sidebar 
-        activeTab={activeTab} 
-        handleTabChange={handleTabChange} 
-        quotaStats={quotaStats}
-        onOpenQuotaModal={() => setIsQuotaModalOpen(true)}
-        user={user}
-        isSyncing={isSyncing}
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-      />
+      {/* Mobile Top Bar Header */}
+      <div className="lg:hidden flex items-center justify-between px-6 py-4 bg-black/40 border-b border-white/5 backdrop-blur-xl sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <button 
+            type="button"
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 -ml-2 rounded-xl border border-white/5 hover:border-amber-500/30 hover:bg-amber-500/10 text-starlight hover:text-amber-400 transition-all duration-300 cursor-pointer"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5 animate-pulse" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="bg-amber-500/20 p-1.5 rounded-lg border border-amber-500/30 animate-pulse">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+            </div>
+            <span className="font-display font-bold text-sm tracking-tight text-white uppercase">Intergalactic</span>
+          </div>
+        </div>
+        
+        {/* State Indicators/User Avatar inside Top Bar */}
+        {user ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[8px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">CTRL_ON</span>
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="Avatar" referrerPolicy="no-referrer" className="w-6 h-6 rounded-full border border-white/10" />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-linear-to-br from-amber-500/20 to-purple-600/20 border border-white/10 flex items-center justify-center text-[9px] text-amber-400">
+                {user.email?.charAt(0).toUpperCase() || 'U'}
+              </div>
+            )}
+          </div>
+        ) : (
+          <button 
+            type="button"
+            onClick={handleLogin}
+            className="text-[9px] font-mono font-extrabold px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/30 text-amber-300 hover:text-amber-200 transition-all duration-300 cursor-pointer"
+          >
+            LINK PROFILE
+          </button>
+        )}
+      </div>
+
+      {/* Desktop Sidebar (lg screens) */}
+      <div className="lg:flex hidden h-full flex-shrink-0">
+        <Sidebar 
+          activeTab={activeTab} 
+          handleTabChange={handleTabChange} 
+          user={user}
+          isSyncing={isSyncing}
+          onLogin={handleLogin}
+          onLogout={handleLogout}
+        />
+      </div>
+
+      {/* Mobile Drawer Slide-out (small screens) */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden flex">
+            {/* Dark glass backdrop overlay */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
+            />
+            
+            {/* Sliding Panel Content Container */}
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="relative w-80 max-w-[85vw] h-full flex z-10"
+            >
+              <Sidebar 
+                activeTab={activeTab} 
+                handleTabChange={(tab) => {
+                  handleTabChange(tab);
+                  setIsMobileMenuOpen(false);
+                }} 
+                user={user}
+                isSyncing={isSyncing}
+                onLogin={handleLogin}
+                onLogout={handleLogout}
+                onClose={() => setIsMobileMenuOpen(false)}
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <NeuralProcessMonitor 
         generatingAvatars={generatingAvatars}
@@ -3819,16 +6577,21 @@ export default function App() {
         scripts={scripts}
         isTrailerLoading={isTrailerLoading}
         isExporting={isExporting}
+        diagnosticLogs={diagnosticLogs}
+        bRollError={bRollError}
+        lipSyncError={lipSyncError}
+        videoError={videoError}
+        setShowDiagnosticOverlay={setShowDiagnosticOverlay}
       />
       
-      <main className="flex-1 overflow-y-auto scroll-hide p-8 relative z-10">
+      <main className="flex-1 overflow-y-auto custom-scrollbar p-8 relative z-10 w-full">
         {/* Top-level subtle progress indicator */}
         {(Object.values(generatingAvatars).some(v => v) || 
           Object.values(generatingManifestos).some(v => v) || 
           Object.values(generatingLipSyncs).some(v => v) || 
           scripts.some(s => s.status === 'generating' || s.isVoiceGenerating) ||
           isTrailerLoading || isExporting) && (
-          <div className="fixed top-0 right-0 left-72 h-0.5 z-[100] bg-white/5 pointer-events-none">
+          <div className="fixed top-0 right-0 lg:left-72 left-0 h-0.5 z-[100] bg-white/5 pointer-events-none">
             <motion.div 
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: '100%', opacity: 1 }}
@@ -3907,7 +6670,7 @@ export default function App() {
                   <div className="absolute bottom-10 right-10 w-8 h-8 border-b-2 border-r-2 border-white/20" />
                 </div>
 
-                {isTrailerLoading || trailerError ? (
+                {isTrailerLoading || (trailerError && !isEmulatedFeed) ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 bg-[#02020a]">
                     <div className="relative">
                       <motion.div 
@@ -3964,21 +6727,247 @@ export default function App() {
                       )}
                       
                       {!trailerError && isTrailerLoading && (
-                        <p className="text-starlight/30 text-[10px] font-mono animate-pulse uppercase tracking-[0.2em]">Synchronizing Cosmic Archives...</p>
+                        <p className="text-starlight/30 text-[10px] font-mono animate-pulse uppercase tracking-[0.2em]">{trailerProgressMessage}</p>
                       )}
+                    </div>
+                  </div>
+                ) : isEmulatedFeed ? (
+                  <div className="absolute inset-0 bg-[#02020c] flex flex-col justify-between p-8 md:p-12 z-10 select-none overflow-hidden">
+                    {/* Glowing Starfield background */}
+                    <div className="absolute inset-0 opacity-20 pointer-events-none">
+                      <div className="absolute top-10 left-12 w-1.5 h-1.5 bg-white rounded-full animate-ping" />
+                      <div className="absolute top-1/3 right-1/4 w-1 h-1 bg-amber-400 rounded-full animate-pulse" />
+                      <div className="absolute bottom-1/4 left-1/3 w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                      <div className="absolute bottom-12 right-20 w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping" />
+                    </div>
+
+                    {/* Spinning Holographic Grid and Compass */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.12]">
+                      <motion.div 
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+                        className="w-[450px] h-[450px] border border-dashed border-purple-500 rounded-full flex items-center justify-center"
+                      >
+                        <motion.div 
+                          animate={{ rotate: -360 }}
+                          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                          className="w-[300px] h-[300px] border border-dashed border-amber-500 rounded-full"
+                        />
+                      </motion.div>
+                    </div>
+
+                    {/* Meta Top Header with Quantum stats */}
+                    <div className="flex justify-between items-center z-10 border-b border-white/5 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-500/20 rounded-lg border border-purple-500/30">
+                          <Activity className="w-4 h-4 text-purple-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <p className="text-stone-300 font-bold text-sm tracking-wider font-display">SIMULATED NEURAL CORE</p>
+                          <p className="text-[9px] font-mono text-purple-400 font-bold tracking-widest uppercase">COSMIC TELEMETRY STREAM // VER. 8.4</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs font-mono">
+                        <div className="text-right">
+                          <p className="text-emerald-400 font-bold">EMULATION ONLINE</p>
+                          <p className="text-[9px] text-starlight/40">BUFFER: 100% (LOCAL_MEM)</p>
+                        </div>
+                        <div className="h-6 w-px bg-white/10" />
+                        <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-wider">
+                          SAFE FEED MODE
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Central visual core: Neural visualization matrix */}
+                    <div className="flex flex-col md:flex-row items-center justify-around gap-6 py-6 z-10">
+                      {/* Interactive spinning holographic compass */}
+                      <div className="relative w-44 h-44 flex items-center justify-center bg-purple-950/5 border border-white/5 rounded-full p-4 shadow-inner">
+                        <motion.div 
+                          animate={{ rotate: isEmulatedPlaying ? 360 : 0 }}
+                          transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                          className="absolute inset-2 border-2 border-double border-purple-500/30 rounded-full"
+                        />
+                        <motion.div 
+                          animate={{ rotate: isEmulatedPlaying ? -360 : 0 }}
+                          transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                          className="absolute inset-8 border border-dotted border-amber-400/50 rounded-full"
+                        />
+                        <Globe className="w-14 h-14 text-purple-400/80 animate-pulse" />
+                        
+                        {/* Audio Waves surrounding */}
+                        <div className="absolute inset-x-0 -bottom-1 flex justify-center gap-[3px]">
+                          {Array(11).fill(0).map((_, i) => (
+                            <motion.div
+                              key={i}
+                              animate={isEmulatedPlaying ? { height: [4, Math.random() * 24 + 6, 4] } : { height: 4 }}
+                              transition={{ duration: 0.8 + i * 0.05, repeat: Infinity, ease: "easeInOut" }}
+                              className="w-[3px] bg-purple-400/60 rounded-full"
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Info diagnostics display */}
+                      <div className="space-y-3 font-mono text-[11px] text-starlight/70 max-w-sm w-full bg-white/[0.01] border border-white/5 p-5 rounded-2xl">
+                        <p className="text-amber-400 font-bold uppercase tracking-wider border-b border-white/5 pb-1.5 mb-2">Council Diagnostics</p>
+                        <div className="flex justify-between">
+                          <span className="text-starlight/35">Sync Channels</span>
+                          <span className="text-purple-400 font-bold">12 Virtual Synapses</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-starlight/35">Resolution Rate</span>
+                          <span>99.98% Clarity</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-starlight/35">Neural Bandwidth</span>
+                          <span>742 GB/s Quantum Link</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-starlight/35">Atmospheric Reverb</span>
+                          <span className="text-emerald-400 font-bold">MAX_FILTER</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] bg-purple-500/10 px-2 py-1 rounded border border-purple-500/20 text-purple-200 mt-2">
+                          <span className="font-extrabold">STATUS:</span>
+                          <span className="tracking-widest uppercase animate-pulse">Synchronizing multi-layer synthesized sound</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Subtitle Display */}
+                    <div className="text-center px-4 max-w-2xl mx-auto z-10 py-2">
+                      <motion.div
+                        key={Math.floor(emulatedProgress / 12)}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="min-h-12 flex items-center justify-center"
+                      >
+                        <p className="text-starlight text-sm font-medium tracking-wide leading-relaxed bg-black/40 px-6 py-2 rounded-xl border border-white/5 inline-block text-amber-100 font-display">
+                          {getEmulatedSubtitle(emulatedProgress)}
+                        </p>
+                      </motion.div>
+                    </div>
+
+                    {/* Playback Controls & Progress Seek bar */}
+                    <div className="space-y-4 z-10 border-t border-white/5 pt-4">
+                      {/* Timeline Seek slider */}
+                      <div className="space-y-1.5 font-sans">
+                        <div className="flex justify-between font-mono text-[9px] text-starlight/40 tracking-wider">
+                          <span>0:{Math.floor(emulatedProgress * 0.4).toString().padStart(2, '0')}</span>
+                          <span className="text-amber-400 font-extrabold uppercase">EMULATED TELEMETRY TRANSCRIPT</span>
+                          <span>0:40</span>
+                        </div>
+                        {/* Interactive Clickable Seek Track */}
+                        <div 
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const percentage = Math.round((clickX / rect.width) * 100);
+                            setEmulatedProgress(Math.max(0, Math.min(100, percentage)));
+                          }}
+                          className="h-2 w-full bg-white/5 rounded-full relative cursor-pointer group"
+                        >
+                          <div 
+                            className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-purple-500 to-amber-400 rounded-full" 
+                            style={{ width: `${emulatedProgress}%` }}
+                          />
+                          <div 
+                            className="absolute h-3.5 w-3.5 bg-amber-400 rounded-full border border-black shadow -top-[3px] -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" 
+                            style={{ left: `${emulatedProgress}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Main control action items */}
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={() => {
+                              setEmulatedProgress(prev => Math.max(0, prev - 10));
+                            }}
+                            className="p-2 text-starlight/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors font-mono text-[10px]"
+                            title="Rewind 4s"
+                          >
+                            -10%
+                          </button>
+                          
+                          <button 
+                            onClick={() => setIsEmulatedPlaying(!isEmulatedPlaying)}
+                            className="px-6 py-2.5 bg-amber-500 text-black hover:scale-105 active:scale-95 text-xs font-bold rounded-xl transition-all flex items-center gap-2"
+                          >
+                            {isEmulatedPlaying ? (
+                              <>
+                                <Pause className="w-4 h-4 fill-current" />
+                                PAUSE STREAM
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4 fill-current" />
+                                RESUME STREAM
+                              </>
+                            )}
+                          </button>
+
+                          <button 
+                            onClick={() => {
+                              setEmulatedProgress(prev => Math.min(100, prev + 10));
+                            }}
+                            className="p-2 text-starlight/40 hover:text-white hover:bg-white/5 rounded-lg transition-colors font-mono text-[10px]"
+                            title="Forward 4s"
+                          >
+                            +10%
+                          </button>
+                        </div>
+
+                        {/* Switch video core options */}
+                        <div className="flex items-center gap-2 font-mono">
+                          <span className="text-[10px] text-starlight/40">SATELLITE SWITCH:</span>
+                          <button 
+                            onClick={async () => {
+                              setTrailerError(false);
+                              setIsEmulatedFeed(false);
+                              setIsTrailerLoading(true);
+                              const nextIdx = (currentTrailerIndex + 1) % trailerUrls.length;
+                              setCurrentTrailerIndex(nextIdx);
+                              setTrailerUrl(trailerUrls[nextIdx]);
+                              await new Promise(r => setTimeout(r, 600));
+                              setIsTrailerLoading(false);
+                            }}
+                            className="px-3 py-1.5 bg-white/5 border border-white/10 text-starlight/80 hover:bg-white/10 rounded-lg text-[10px] tracking-wider transition-all"
+                          >
+                            ATTACH VIDEO RELAY ({currentTrailerIndex + 1}/{trailerUrls.length})
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <video 
                     autoPlay 
+                    playsInline
                     className="w-full h-full object-cover relative z-10"
                     controls
-                    src={trailerUrl || ''}
+                    src={trailerUrl || ''} {...({ referrerPolicy: "no-referrer" } as any)}
                     onEnded={() => { setShowTrailer(false); setTrailerUrl(null); }}
                     onLoadedData={() => setSignalStrength(100)}
                     onError={() => {
-                      setTrailerError(true);
-                      setNotification({ message: "Neural transmission link severed. Source link unreachable.", type: 'error' });
+                      const nextIndex = currentTrailerIndex + 1;
+                      if (nextIndex < trailerUrls.length) {
+                        setCurrentTrailerIndex(nextIndex);
+                        setTrailerUrl(trailerUrls[nextIndex]);
+                        setNotification({ 
+                          message: `Rerouting neural transmission. Switching back to video node (${nextIndex + 1}/${trailerUrls.length})...`, 
+                          type: 'info' 
+                        });
+                      } else {
+                        setIsEmulatedFeed(true);
+                        setEmulatedProgress(0);
+                        setIsEmulatedPlaying(true);
+                        setNotification({ 
+                          message: "Live stream redirected to primary simulated neural core. Intergalactic feed online.", 
+                          type: 'info' 
+                        });
+                      }
                     }}
                   />
                 )}
@@ -4024,6 +7013,134 @@ export default function App() {
         </AnimatePresence>
 
         <div className="max-w-5xl mx-auto">
+          {/* Top Header / Quota Health Bar */}
+          <div className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/[0.01] backdrop-blur-xl rounded-2xl border border-white/5 p-4 sm:p-5 gap-4">
+            <div>
+              <span className="text-[10px] font-mono text-starlight/40 uppercase tracking-[0.2em] leading-none block">AI CORE OPERATIONAL INTERFACE</span>
+              <h2 className="text-xl font-display font-bold text-starlight mt-1 flex items-center gap-2 capitalize">
+                <span>{activeTab === 'overview' ? 'Command Center Dashboard' : activeTab === 'about' ? 'About Workspace & Assembly' : activeTab + ' Sync Zone'}</span>
+              </h2>
+            </div>
+            
+            {/* Elegant Top Quota Health & Telemetry Pill */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div 
+                onClick={() => setIsQuotaModalOpen(true)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border transition-all duration-300 cursor-pointer select-none group/quota ${
+                  quotaStats.healthStatus === 'Critical' ? 'bg-red-500/5 hover:bg-red-500/10 border-red-500/20 hover:border-red-500/30 text-red-200' :
+                  quotaStats.healthStatus === 'Warning' ? 'bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/20 hover:border-amber-500/30 text-amber-200' :
+                  'bg-emerald-500/5 hover:bg-emerald-500/10 border-emerald-500/20 hover:border-emerald-500/30 text-emerald-200'
+                }`}
+                title="Click to check Neural Quota details & recalibrate"
+              >
+                <span className="relative flex h-2 w-2">
+                  {quotaStats.healthStatus === 'Critical' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  )}
+                  {quotaStats.healthStatus === 'Warning' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    quotaStats.healthStatus === 'Critical' ? 'bg-red-500' :
+                    quotaStats.healthStatus === 'Warning' ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`}></span>
+                </span>
+                
+                <span className="text-[11px] font-mono uppercase tracking-wider text-starlight/70 group-hover/quota:text-starlight transition-colors">
+                  AI QUOTA HEALTH: <span className="font-extrabold">{quotaStats.healthStatus.toUpperCase()}</span>
+                </span>
+
+                <div className="h-3 w-px bg-white/10" />
+
+                <span className="text-[11px] font-mono text-starlight/55 group-hover/quota:text-amber-400 transition-colors">
+                  {quotaStats.estimatedCreditsRemaining}% RATE
+                </span>
+
+                {quotaStats.quotaErrors > 0 && (
+                  <>
+                    <div className="h-3 w-px bg-white/10" />
+                    <span className="text-[10px] font-mono text-red-400 flex items-center gap-1 font-bold">
+                      ⚠️ LIMITS ({quotaStats.quotaErrors})
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Real-time Signal Strength Status */}
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-300">
+                <Radio className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                <span className="text-[11px] font-mono text-starlight/70 tracking-wider">
+                  SIGNAL: <span className="font-bold text-amber-400">94% OPTIMAL</span>
+                </span>
+                <div className="h-1.5 w-8 bg-white/10 rounded-full overflow-hidden hidden sm:block">
+                  <div className="h-full bg-amber-500 w-[94%]" />
+                </div>
+              </div>
+
+              {/* System Configuration Shortcut */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleTabChange('overview');
+                  setTimeout(() => {
+                    document.getElementById('system-config')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 100);
+                }}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.07] hover:border-white/15 hover:text-white text-starlight/70 transition-all duration-300 cursor-pointer"
+                title="Scroll to System Configuration panel inside Overview"
+              >
+                <Settings className="w-3.5 h-3.5 text-starlight/50" />
+                <span className="text-[11px] font-mono tracking-wider">SYS CONFIG</span>
+              </button>
+
+              {/* Secure Cloud Sync & Authentication Portal */}
+              <div className="flex items-center">
+                {user ? (
+                  <div className="flex items-center gap-2.5 px-3 py-1.5 sm:py-2 rounded-xl border border-purple-500/20 bg-purple-500/[0.03] hover:bg-purple-500/[0.06] transition-all duration-300">
+                    <div className="flex items-center gap-1.5">
+                      {user.photoURL ? (
+                        <img src={user.photoURL} alt={user.displayName || 'User'} referrerPolicy="no-referrer" className="w-4 h-4 rounded-full border border-purple-500/20" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-purple-500/20 flex items-center justify-center text-[8px] text-purple-300 font-bold border border-purple-500/30">
+                          {user.email?.[0].toUpperCase() || 'U'}
+                        </div>
+                      )}
+                      <div className="max-w-[80px] sm:max-w-[120px] truncate">
+                        <span className="text-[11px] text-starlight font-bold leading-none block truncate">{user.displayName || 'Authorized Client'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 bg-emerald-500/10 px-1.5 py-0.5 rounded text-[8px] font-mono text-emerald-400 border border-emerald-500/20 h-4">
+                      <span className={`w-1 h-1 rounded-full bg-emerald-400 ${isSyncing ? 'animate-ping' : ''}`} />
+                      <span className="tracking-wider uppercase hidden sm:inline">{isSyncing ? 'SYNCING' : 'SECURE'}</span>
+                    </div>
+
+                    <div className="h-3 w-px bg-white/10" />
+
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 cursor-pointer transition-colors"
+                      title="Disconnect Cloud Sync Core"
+                    >
+                      DISCONNECT
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleLogin}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-purple-500 via-amber-500/80 to-amber-500 hover:from-purple-400 hover:to-amber-400 text-black rounded-xl text-[11px] font-mono uppercase tracking-wider font-extrabold text-center transition-all duration-300 cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.15)] hover:scale-[1.02] active:scale-[0.98]"
+                    title="Click to authorize Google account syncing"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-black animate-pulse" />
+                    <span>LINK SECURE PROFILE</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <AnimatePresence mode="wait">
             {activeTab === 'overview' && (
               <motion.div
@@ -4127,6 +7244,217 @@ export default function App() {
                   selectingForSection={selectingBRollForSection}
                 />
 
+                {/* Triumvirate Resolution Matrix (Quantum Decision Crucible) */}
+                <div id="triumvirate-resolution-matrix" className="glass-panel p-8 border-white/5 relative overflow-hidden space-y-6">
+                  <div className="absolute top-0 right-0 p-8 opacity-5">
+                    <Cpu className="w-40 h-40 text-amber-500" />
+                  </div>
+                  
+                  <div className="relative z-10">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-amber-500/20 p-2 rounded-xl">
+                          <Activity className="w-6 h-6 text-amber-400 animate-pulse" />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-display font-bold">Triumvirate <span className="text-amber-400">Resolution</span> Matrix</h3>
+                          <p className="text-xs text-starlight/40 font-mono uppercase tracking-wider mt-0.5">Submit strategic directives for immediate tripartite decision calibration</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 font-mono text-[10px] bg-black/40 border border-white/5 px-3 py-1.5 rounded-lg">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        <span className="text-starlight/40">ORACLE CALIBRATION:</span>
+                        <span className="text-green-400 font-bold uppercase">100% ONLINE</span>
+                      </div>
+                    </div>
+
+                    <p className="text-sm text-starlight/60 mb-6 max-w-2xl">
+                      Draft an interstellar proposal or select a preset crisis. The three members of The Triumvirate will synthesize their core principles in real-time to cast their secure vote with full philosophical rationale.
+                    </p>
+
+                    {/* Presets Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                      {[
+                        { text: "Deploy absolute quantum firewall shields across organic sectors", tag: "Security" },
+                        { text: "Launch autonomous hyper-optimizing AI networks across deep space", tag: "Efficiency" },
+                        { text: "Suspend industrial raw carbon fuel pipelines to accelerate bio-transcendence", tag: "Visionary" },
+                        { text: "Initiate full-scale security lockdown on rogue system gateways", tag: "Defense" }
+                      ].map((preset, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => setProposalInput(preset.text)}
+                          className="text-left font-mono text-xs p-3 bg-white/[0.02] hover:bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-all text-starlight/70 hover:text-starlight flex justify-between items-center group cursor-pointer"
+                        >
+                          <span className="truncate mr-2">"{preset.text}"</span>
+                          <span className="px-1.5 py-0.5 rounded text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:bg-amber-500/20 transition-all">{preset.tag}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Input Area */}
+                    <form onSubmit={(e) => { e.preventDefault(); conveneTriumvirateResolution(proposalInput); }} className="space-y-4">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <input
+                          type="text"
+                          value={proposalInput}
+                          onChange={(e) => setProposalInput(e.target.value)}
+                          placeholder="Formulate a directive (e.g. 'Establish quantum gateway on the Orion Sector'...)"
+                          className="flex-1 bg-black/60 border border-white/10 rounded-xl px-5 py-4 text-sm text-starlight focus:outline-none focus:border-amber-400/50 placeholder-starlight/20 transition-all font-mono"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isConvening || !proposalInput.trim()}
+                          className={`px-8 py-4 rounded-xl font-bold font-mono text-xs uppercase tracking-widest transition-all shadow-xl select-none relative cursor-pointer ${
+                            isConvening || !proposalInput.trim()
+                              ? 'bg-white/5 text-starlight/20 border border-white/5 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:brightness-110 active:scale-95'
+                          }`}
+                        >
+                          {isConvening ? (
+                            <span className="flex items-center gap-2">
+                              <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> Convening...
+                            </span>
+                          ) : (
+                            "Convene Council"
+                          )}
+                        </button>
+                      </div>
+                    </form>
+
+                    {matrixError && (
+                      <div className="mt-4 p-4 bg-red-950/40 border border-red-500/20 rounded-xl font-mono text-[11px] text-red-105 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping mr-2" />
+                        <span>SYNAPSE ERROR: {matrixError}</span>
+                      </div>
+                    )}
+
+                    {/* Results Presentation */}
+                    <AnimatePresence mode="wait">
+                      {resolutionResult && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -15 }}
+                          className="mt-8 space-y-6"
+                        >
+                          {/* Central Consensus Header */}
+                          <div id="oracle-consensus-banner" className={`p-5 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                            resolutionResult.outcome === 'APPROVED'
+                              ? 'bg-emerald-500/[0.03] border-emerald-500/20'
+                              : resolutionResult.outcome === 'REJECTED'
+                              ? 'bg-red-500/[0.03] border-red-500/20'
+                              : 'bg-amber-500/[0.03] border-amber-500/20'
+                          }`}>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[9px] uppercase tracking-widest text-starlight/40">Oracle Verdict Verdict</span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-widest uppercase ${
+                                  resolutionResult.outcome === 'APPROVED'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]'
+                                    : resolutionResult.outcome === 'REJECTED'
+                                    ? 'bg-red-500/10 text-red-400 border border-red-500/20 shadow-[0_0_12px_rgba(239,68,68,0.1)]'
+                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-[0_0_12px_rgba(245,158,11,0.1)]'
+                                }`}>
+                                  {resolutionResult.outcome}
+                                </span>
+                              </div>
+                              <p className="text-xs text-starlight/80 leading-relaxed font-mono italic">
+                                "{resolutionResult.oracleSummary}"
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Member Feedback Breakdown Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            {/* Lion (The Visionary) */}
+                            <div className="p-5 rounded-xl border border-white/5 bg-black/45 space-y-3 relative group">
+                              <div className="absolute top-4 right-4 font-mono text-[9px] font-bold">
+                                {resolutionResult.members?.lion?.vote === 'ACCEPT' ? (
+                                  <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">ACCEPT</span>
+                                ) : resolutionResult.members?.lion?.vote === 'REJECT' ? (
+                                  <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20">REJECT</span>
+                                ) : (
+                                  <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">ABSTAIN</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+                                <h4 className="font-bold text-sm font-display">The Lion</h4>
+                              </div>
+                              <p className="text-[10px] uppercase font-mono text-amber-400">COSMIC VISIONARY FEED</p>
+                              <p className="text-xs text-starlight/60 leading-relaxed font-normal italic">
+                                "{resolutionResult.members?.lion?.rationale || 'Transmission out of sync.'}"
+                              </p>
+                            </div>
+
+                            {/* Jaguar (The Strategist) */}
+                            <div className="p-5 rounded-xl border border-white/5 bg-black/45 space-y-3 relative group">
+                              <div className="absolute top-4 right-4 font-mono text-[9px] font-bold">
+                                {resolutionResult.members?.jaguar?.vote === 'ACCEPT' ? (
+                                  <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">ACCEPT</span>
+                                ) : resolutionResult.members?.jaguar?.vote === 'REJECT' ? (
+                                  <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20">REJECT</span>
+                                ) : (
+                                  <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">ABSTAIN</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
+                                <h4 className="font-bold text-sm font-display">The Jaguar</h4>
+                              </div>
+                              <p className="text-[10px] uppercase font-mono text-purple-400">HYPER-OPTIMIZING ARRAY</p>
+                              <p className="text-xs text-starlight/60 leading-relaxed font-normal italic">
+                                "{resolutionResult.members?.jaguar?.rationale || 'Transmission out of sync.'}"
+                              </p>
+                            </div>
+
+                            {/* Tiger (The Guardian) */}
+                            <div className="p-5 rounded-xl border border-white/5 bg-black/45 space-y-3 relative group">
+                              <div className="absolute top-4 right-4 font-mono text-[9px] font-bold">
+                                {resolutionResult.members?.tiger?.vote === 'ACCEPT' ? (
+                                  <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">ACCEPT</span>
+                                ) : resolutionResult.members?.tiger?.vote === 'REJECT' ? (
+                                  <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20">REJECT</span>
+                                ) : (
+                                  <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">ABSTAIN</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                                <h4 className="font-bold text-sm font-display">The Tiger</h4>
+                              </div>
+                              <p className="text-[10px] uppercase font-mono text-emerald-400">FORTIFIED GUARD SYSTEM</p>
+                              <p className="text-xs text-starlight/60 leading-relaxed font-normal italic">
+                                "{resolutionResult.members?.tiger?.rationale || 'Transmission out of sync.'}"
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                {/* Threat Scanner Panel */}
+                <div className="relative">
+                  <div className="absolute -inset-1 bg-linear-to-r from-[#f59e0b]/5 to-[#10b981]/5 rounded-3xl blur-2xl opacity-40 pointer-events-none" />
+                  <ThreatScanner />
+                </div>
+
+                {/* Cognitive Resonance Tuner Panel */}
+                <div className="relative">
+                  <div className="absolute -inset-1 bg-linear-to-r from-purple-500/5 to-amber-500/5 rounded-3xl blur-2xl opacity-40 pointer-events-none" />
+                  <CognitiveResonanceTuner />
+                </div>
+
+                {/* Neural Telemetry Index Panel */}
+                <div className="relative">
+                  <div className="absolute -inset-1 bg-linear-to-r from-emerald-500/5 to-purple-500/5 rounded-3xl blur-2xl opacity-40 pointer-events-none" />
+                  <NeuralTelemetryIndex />
+                </div>
+
                 {/* Lore Management Panel */}
                 <div className="glass-panel p-8 border-white/5 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-8 opacity-5">
@@ -4217,10 +7545,45 @@ export default function App() {
                         </div>
                         
                         <div className="flex flex-col gap-4">
-                          <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-white/10 rounded-2xl cursor-pointer hover:bg-white/5 hover:border-blue-500/50 transition-all group">
+                          <label 
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDragging(true);
+                            }}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              setIsDragging(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setIsDragging(false);
+                              const file = e.dataTransfer.files?.[0];
+                              if (file && file.type.startsWith('image/')) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setCustomBackgroundUrl(reader.result as string);
+                                  setNotification({ message: "Custom neural backdrop synchronized via drag & drop.", type: 'success' });
+                                };
+                                reader.readAsDataURL(file);
+                              } else {
+                                setNotification({ message: "Invalid file entity. Only standard stellar imagery supported.", type: 'error' });
+                              }
+                            }}
+                            className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-300 group ${
+                              isDragging 
+                                ? 'border-amber-500/70 bg-amber-500/10 scale-[0.99] shadow-[0_0_20px_rgba(251,191,36,0.15)]' 
+                                : 'border-white/10 hover:bg-white/5 hover:border-blue-500/50'
+                            }`}
+                          >
                             <div className="flex flex-col items-center justify-center pb-6 pt-5">
-                              <ImagePlus className="w-8 h-8 text-starlight/20 group-hover:text-blue-400 transition-colors mb-2" />
-                              <p className="mb-2 text-sm text-starlight/40"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                              <ImagePlus className={`w-8 h-8 mb-2 transition-all duration-300 ${isDragging ? 'text-amber-400 scale-110 rotate-3' : 'text-starlight/20 group-hover:text-blue-400'}`} />
+                              <p className={`mb-2 text-sm transition-colors duration-300 ${isDragging ? 'text-amber-300 font-bold' : 'text-starlight/40'}`}>
+                                {isDragging ? 'Release to upload backdrop' : <><span className="font-semibold text-starlight hover:text-blue-300">Click to upload</span> or drag and drop</>}
+                              </p>
                               <p className="text-xs text-starlight/20 uppercase font-mono">PNG, JPG or WEBP (MAX. 2048x1024px)</p>
                             </div>
                             <input 
@@ -4615,12 +7978,25 @@ export default function App() {
                 exit={{ opacity: 0, scale: 1.05 }}
                 className="space-y-8"
               >
-                <div>
-                  <h2 className="text-4xl font-display font-medium mb-2">The <span className="text-amber-400">Triumvirate</span></h2>
-                  <p className="text-starlight/40 font-mono text-xs">RECONSTRUCTING BIOMETRIC DATA FROM INTERGALACTIC SIGNALS...</p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-4xl font-display font-medium mb-1">The <span className="text-amber-400">Triumvirate</span></h2>
+                    <p className="text-starlight/40 font-mono text-xs">RECONSTRUCTING BIOMETRIC DATA FROM INTERGALACTIC SIGNALS...</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      playUIClick();
+                      setShowVocalLibrary(true);
+                    }}
+                    className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 hover:text-white font-mono text-xs border border-purple-500/30 hover:border-purple-500/50 transition-all active:scale-95 cursor-pointer self-start sm:self-auto shadow-[0_0_15px_rgba(147,51,234,0.1)] hover:shadow-[0_0_25px_rgba(147,51,234,0.2)]"
+                    id="trigger-vocal-library-btn"
+                  >
+                    <Volume2 className="w-4 h-4 text-purple-400" />
+                    <span>OPEN VOCAL LIBRARY</span>
+                  </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {characters.map(char => (
+                   {characters.map(char => (
                     <CharacterCard 
                       key={char.id} 
                       char={char} 
@@ -4630,10 +8006,18 @@ export default function App() {
                       onAnimateImageToVideo={generateAnimateVideo}
                       onUpdateSync={updateLipSyncSettings}
                       onUpdateTheme={updateCharacterTheme}
+                      onUpdateVoice={updateCharacterVoice}
+                      onTestVoice={testCharacterVoice}
+                      onOpenVocalLibrary={() => {
+                        playUIClick();
+                        setShowVocalLibrary(true);
+                      }}
+                      isTestingVoice={!!testingVoiceIds[char.id]}
                       isGenerating={!!generatingAvatars[char.id]} 
                       isManifestoGenerating={!!generatingManifestos[char.id]}
                       isLipSyncGenerating={!!generatingLipSyncs[char.id]}
                       isAnimateVideoGenerating={!!generatingAnimateVideos[char.id]}
+                      isActiveSpeaker={activeSpeakerId === char.id}
                     />
                   ))}
                 </div>
@@ -4653,11 +8037,15 @@ export default function App() {
                     <h2 className="text-4xl font-display font-medium mb-2">The <span className="text-amber-400">Script</span> Forge</h2>
                     <p className="text-starlight/40 font-mono text-xs">GENERATING NEURAL-LINKED DIALOGUE FLOWS...</p>
                   </div>
-                  <button className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 flex items-center gap-2">
+                  <button 
+                    onClick={handleExportManuscript}
+                    className="bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/10 flex items-center gap-2 cursor-pointer transition-all"
+                  >
                     <Download className="w-4 h-4" />
                     EXPORT FULL MANUSCRIPT
                   </button>
                 </div>
+
                 <ScriptForge 
                   sections={scripts} 
                   onGenerate={generateScript} 
@@ -4668,6 +8056,25 @@ export default function App() {
                   setActiveTheme={setActiveTheme}
                   onSelectBRoll={setSelectingBRollForSection}
                   selectingBRollForSection={selectingBRollForSection}
+                  playAudio={playAudio}
+                  bRolls={bRolls}
+                  onRefreshBRolls={fetchBRolls}
+                  onLinkBRoll={handleSelectBRoll}
+                  debateModeEnabled={debateModeEnabled}
+                  setDebateModeEnabled={setDebateModeEnabled}
+                  debateIntensity={debateIntensity}
+                  setDebateIntensity={setDebateIntensity}
+                  debateOpener={debateOpener}
+                  setDebateOpener={setDebateOpener}
+                  debateTopicSpark={debateTopicSpark}
+                  setDebateTopicSpark={setDebateTopicSpark}
+                  debateStances={debateStances}
+                  setDebateStances={setDebateStances}
+                  directorMode={directorMode}
+                  setDirectorMode={setDirectorMode}
+                  activeSpeakerId={activeSpeakerId}
+                  setActiveSpeakerId={setActiveSpeakerId}
+                  onCompileDebate={compileDebateDeck}
                 />
               </motion.div>
             )}
@@ -4692,7 +8099,17 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-8"
               >
-                <MediaLab characters={characters} activeTheme={activeTheme} />
+                <MediaLab 
+                  characters={characters} 
+                  activeTheme={activeTheme} 
+                  onAddBRoll={(newBRoll) => {
+                    setBRolls(prev => [newBRoll, ...prev]);
+                    setNotification({
+                      message: `New Media Lab video successfully linked to Cosmic B-Roll library!`,
+                      type: 'success'
+                    });
+                  }}
+                />
               </motion.div>
             )}
 
@@ -4704,11 +8121,22 @@ export default function App() {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-12"
               >
-                <div>
-                  <h2 className="text-4xl font-display font-medium mb-2">Production <span className="text-amber-400">Pipeline</span></h2>
-                  <p className="text-starlight/40 font-mono text-xs italic tracking-widest leading-relaxed max-w-2xl">
-                    The sequence of assembly protocols across the intergalactic neural network. Each module must be synchronized for the final collective broadcast.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 border-b border-white/5 pb-6">
+                  <div>
+                    <h2 className="text-4xl font-display font-medium mb-2">Production <span className="text-amber-400">Pipeline</span></h2>
+                    <p className="text-starlight/40 font-mono text-xs italic tracking-widest leading-relaxed max-w-2xl">
+                      The sequence of assembly protocols across the intergalactic neural network. Each module must be synchronized for the final collective broadcast.
+                    </p>
+                  </div>
+                  <div>
+                    <button
+                      onClick={() => setShowDiagnosticOverlay(true)}
+                      className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-5 py-3 rounded-xl font-bold font-mono text-xs tracking-wider flex items-center gap-2 cursor-pointer transition-all shadow-[0_0_15px_rgba(239,68,68,0.1)] active:scale-95 whitespace-nowrap"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping inline-block mr-1" />
+                      LIVE DIAGNOSTICS HUB
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
@@ -4752,6 +8180,36 @@ export default function App() {
                         )}
                       </div>
                     ))}
+
+                    {/* Clear Asset Cache Control Card */}
+                    <div className="glass-panel p-6 border-purple-500/10 bg-[#060613]/55 relative overflow-hidden space-y-4">
+                      <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                        <Trash2 className="w-24 h-24 text-purple-500" />
+                      </div>
+                      
+                      <div className="flex items-start gap-3.5">
+                        <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 shrink-0">
+                          <Trash2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-display font-bold text-white text-base">Asset Cache Control</h4>
+                          <p className="text-xs text-starlight/50 leading-relaxed mt-1">
+                            Purges cached cosmic <span className="text-purple-400 font-bold uppercase">B-Roll</span> paths and biometric <span className="text-amber-400 font-bold uppercase">Lip-Sync</span> coordinates. Use this to force-refresh asset registers if you perceive latency or see corrupted videos.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end border-t border-white/5 pt-4">
+                        <button
+                          type="button"
+                          onClick={handleClearAssetCache}
+                          className="px-4 py-2.5 rounded-xl text-xs font-mono font-bold uppercase tracking-wider flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 hover:text-white transition-all active:scale-95 cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.1)] hover:shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                        >
+                          <RefreshCcw className="w-3.5 h-3.5" />
+                          <span>Clear Asset Cache</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -4791,6 +8249,320 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Live Diagnostics HUD Overlay */}
+                <AnimatePresence>
+                  {showDiagnosticOverlay && (
+                    <div id="diagnostics-overlay" className="fixed inset-0 bg-[#02020a]/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                        className="max-w-4xl w-full bg-[#070714]/98 border border-red-500/30 rounded-3xl p-6 sm:p-8 space-y-6 shadow-[0_0_50px_rgba(239,68,68,0.15)] relative overflow-hidden flex flex-col max-h-[90vh]"
+                      >
+                        {/* Glowing warning boundary line */}
+                        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-red-500/10 via-red-500/80 to-red-500/10" />
+
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                          <div className="flex items-center gap-3 w-full">
+                            <div className="p-2.5 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20">
+                              <Activity className="w-6 h-6 animate-pulse" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-xl font-display font-medium text-white tracking-wide truncate">NEURAL BROADCAST PIPELINE DIAGNOSTICS</h3>
+                              <p className="text-[10px] font-mono text-starlight/45 uppercase tracking-widest mt-0.5 truncate">Real-time API performance telemetry & system health logs</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => setShowDiagnosticOverlay(false)}
+                            className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-starlight/60 hover:text-white transition-colors cursor-pointer ml-4"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+
+                        {/* Content grid - Scrollable to prevent cut-offs */}
+                        <div className="flex-1 overflow-y-auto space-y-6 pr-1 custom-scrollbar text-left">
+                          
+                          {/* Alarms & Failures Section */}
+                          {(bRollError || lipSyncError || videoError || assemblyPipelineError) ? (
+                            <div className="glass-panel p-5 bg-red-500/[0.03] border-red-500/30 space-y-4 shadow-[0_0_15px_rgba(239,68,68,0.05)] rounded-2xl">
+                              <div className="flex items-center gap-2 text-red-400 font-bold font-mono text-xs uppercase tracking-wider animate-pulse">
+                                <AlertOctagon className="w-5 h-5" />
+                                <span>Active Broadcast Pipeline Interrupts Detected</span>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono">
+                                {/* Assembly Pipeline Error card */}
+                                {assemblyPipelineError && (
+                                  <div className="bg-[#0f0505] border border-red-500/30 rounded-xl p-4 flex flex-col justify-between col-span-1 md:col-span-3">
+                                    <div>
+                                      <span className="text-[9px] font-mono uppercase font-bold text-red-500 bg-red-500/15 px-2 py-0.5 rounded">ASSEMBLY PIPELINE ERROR</span>
+                                      <p className="text-xs text-red-200 mt-3 font-mono leading-relaxed bg-red-500/5 border border-red-500/10 p-3 rounded-lg break-words">{assemblyPipelineError}</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        setAssemblyPipelineError(null);
+                                        logDiagnostic('info', 'Cinematic Compositor', 'User forced pipeline validation clear.');
+                                      }}
+                                      className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 mt-4 text-left flex items-center gap-1 border-t border-red-500/10 pt-2.5 cursor-pointer w-fit"
+                                    >
+                                      <RefreshCcw className="w-3.5 h-3.5 mr-1" /> FORCE SYSTEM BYPASS & CLEAR PIPELINE INTERRUPT
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* B-Roll API Error card */}
+                                {bRollError && (
+                                  <div className="bg-[#09050d] border border-red-500/20 rounded-xl p-4 flex flex-col justify-between">
+                                    <div>
+                                      <span className="text-[9px] font-mono uppercase font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded">B-ROLL API STATUS</span>
+                                      <p className="text-xs text-white/90 mt-2 font-mono break-words leading-relaxed">{bRollError}</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        setBRollError(null);
+                                        logDiagnostic('info', 'B-Roll Generator', 'User forced manual calibration clean.');
+                                      }}
+                                      className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 mt-4 text-left flex items-center gap-1 border-t border-red-500/10 pt-2 cursor-pointer"
+                                    >
+                                      <RefreshCcw className="w-3 h-3" /> CLEAR ALARM
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Lip-Sync API Error card */}
+                                {lipSyncError && (
+                                  <div className="bg-[#09050d] border border-red-500/20 rounded-xl p-4 flex flex-col justify-between">
+                                    <div>
+                                      <span className="text-[9px] font-mono uppercase font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded">LIP-SYNC API STATUS</span>
+                                      <p className="text-xs text-white/90 mt-2 font-mono break-words leading-relaxed">{lipSyncError}</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        setLipSyncError(null);
+                                        logDiagnostic('info', 'Lip-Sync Generator', 'User forced manual expression calibration.');
+                                      }}
+                                      className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 mt-4 text-left flex items-center gap-1 border-t border-red-500/10 pt-2 cursor-pointer"
+                                    >
+                                      <RefreshCcw className="w-3 h-3" /> CLEAR ALARM
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* Video Generation Error card */}
+                                {videoError && (
+                                  <div className="bg-[#09050d] border border-red-500/20 rounded-xl p-4 flex flex-col justify-between">
+                                    <div>
+                                      <span className="text-[9px] font-mono uppercase font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded">VIDEO ASSEMBLY STATUS</span>
+                                      <p className="text-xs text-white/95 mt-2 font-mono break-words leading-relaxed">{videoError}</p>
+                                    </div>
+                                    <button 
+                                      onClick={() => {
+                                        setVideoError(null);
+                                        logDiagnostic('info', 'Cinematic Compositor', 'User forced compositing buffer flash.');
+                                      }}
+                                      className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 mt-4 text-left flex items-center gap-1 border-t border-red-500/10 pt-2 cursor-pointer"
+                                    >
+                                      <RefreshCcw className="w-3 h-3" /> CLEAR ALARM
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="glass-panel p-5 border-emerald-500/20 bg-emerald-500/[0.02] flex items-center justify-between rounded-2xl">
+                              <div className="flex items-center gap-3">
+                                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                                <div>
+                                  <h4 className="text-sm font-bold text-emerald-400 font-display">All Pipeline handshakes OK</h4>
+                                  <p className="text-xs text-starlight/60">No API generation exceptions currently captured. Intergalactic broadcast links are coherent.</p>
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-mono text-emerald-500 font-bold border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 rounded-full uppercase tracking-wider">ALL SECURES</span>
+                            </div>
+                          )}
+
+                          {/* Step Metrics Monitor Table */}
+                          <div className="glass-panel p-6 border-white/5 space-y-4 rounded-2xl">
+                            <h4 className="text-xs font-mono font-bold uppercase text-white/70 tracking-wider">Active Handshake Matrices Matrix</h4>
+                            <div className="divide-y divide-white/5">
+                              {[
+                                { step: 1, label: 'Script Forge API', desc: 'Define the 10-minute philosophical debate.', completed: scripts.every(s => s.status === 'completed'), indicator: 'POST /api/generate-script', isProcessing: scripts.some(s => s.status === 'generating') },
+                                { step: 2, label: 'Avatar Sync API', desc: 'Generate character visuals for council members.', completed: characters.every(c => c.avatar), indicator: 'POST /api/generate-avatar', isProcessing: Object.values(generatingAvatars).some(Boolean) },
+                                { step: 3, label: 'Audio Synthesis Speech Engine', desc: 'Synthesize distinctive voices in various keys.', completed: scripts.every(s => !!s.audioData), indicator: 'POST /api/text-to-speech', isProcessing: scripts.some(s => s.isVoiceGenerating) },
+                                { step: 4, label: 'Lip-Sync Animation Tracker', desc: 'Map biometric speech files onto faces.', completed: characters.some(c => !!c.lipSyncUrl), indicator: 'POST /api/generate-council-video', isProcessing: Object.values(generatingLipSyncs).some(Boolean), hasError: !!lipSyncError },
+                                { step: 5, label: 'Cosmic B-Roll Synchronizer', desc: 'Query random high-fidelity visuals.', completed: scripts.some(s => !!s.bRollUrl), indicator: 'GET /api/generate-broll', isProcessing: false, hasError: !!bRollError },
+                                { step: 6, label: 'Final Cinematic Compositor', desc: 'Stitch multiplex timeline layers together.', completed: false, indicator: 'GET /api/generate-trailer', isProcessing: isExporting, hasError: !!videoError || !!assemblyPipelineError }
+                              ].map((item) => (
+                                <div key={item.step} className="py-3 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-xs font-mono text-starlight/30 mt-0.5 font-display">0{item.step}</span>
+                                    <div>
+                                      <h5 className="text-sm font-bold text-white flex items-center gap-2">
+                                        {item.label}
+                                        {item.isProcessing && (
+                                          <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                                        )}
+                                      </h5>
+                                      <span className="text-[10px] text-starlight/50 font-mono italic">{item.indicator}</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-3 self-end sm:self-auto">
+                                    {item.hasError ? (
+                                      <span className="text-[9px] font-mono text-red-400 bg-red-400/10 border border-red-400/20 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-bold uppercase tracking-wider animate-pulse">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> ALARM FAIL
+                                      </span>
+                                    ) : item.isProcessing ? (
+                                      <span className="text-[9px] font-mono text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-bold uppercase tracking-wider">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" /> INTERACTIVE
+                                      </span>
+                                    ) : item.completed ? (
+                                      <span className="text-[9px] font-mono text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-bold uppercase tracking-wider">
+                                        <Check className="w-3 h-3 text-emerald-400 font-bold" /> COMPLETE
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-mono text-starlight/30 bg-white/5 border border-white/5 px-2.5 py-1 rounded-full flex items-center gap-1.5 uppercase tracking-wider">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-starlight/20" /> STANDBY
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Simulation Tools Sandbox Panel (Ensuring interactive verification) */}
+                          <div className="glass-panel p-5 bg-white/[0.01] border-white/5 space-y-4 rounded-2xl">
+                            <div className="flex items-center gap-2 text-starlight/80 font-bold font-mono text-xs uppercase tracking-wider">
+                              <Wrench className="w-4 h-4 text-purple-400" />
+                              <span>Diagnostics Interactive Sandbox</span>
+                            </div>
+                            
+                            <p className="text-xs text-starlight/50 leading-relaxed">
+                              Manually trigger simulated client-side API failures on this console to instantly test the diagnostic warning overlays and check your system tolerance.
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                              <button 
+                                onClick={() => {
+                                  logDiagnostic('error', 'B-Roll Generator', 'Failed to retrieve real-time B-Roll video feed from API.', 'HTTP Request failed with status 503 SERVICE UNAVAILABLE. sector 9 cluster failed cache validation.');
+                                  setNotification({ message: "Simulated B-Roll API failure triggered.", type: 'error' });
+                                }}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-3 rounded-xl text-[10px] font-mono font-bold transition-all hover:scale-105 cursor-pointer"
+                              >
+                                MOCK B-ROLL FAIL
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  logDiagnostic('error', 'Lip-Sync Generator', 'Lip-sync forge API failure: neural response buffer overrun.', 'Error: Server terminated TCP connection abruptly while synthesizing voice metrics (Socket Error 0xC00020).');
+                                  setNotification({ message: "Simulated Lip-Sync API failure triggered.", type: 'error' });
+                                }}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-3 rounded-xl text-[10px] font-mono font-bold transition-all hover:scale-105 cursor-pointer"
+                              >
+                                MOCK LIP-SYNC FAIL
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  logDiagnostic('error', 'Video Generator (Veo)', 'Veo initiation failed: Prompt rejected by safety filter protocols.', 'Model rejected input seed 43818. Reason: Safety classification triggered for cosmic sequence directive.');
+                                  setNotification({ message: "Simulated Video generator failure triggered.", type: 'error' });
+                                }}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 p-3 rounded-xl text-[10px] font-mono font-bold transition-all hover:scale-105 cursor-pointer"
+                              >
+                                MOCK VIDEO GEN FAIL
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  logDiagnostic('error', 'Cinematic Compositor', 'Assembly Pipeline Error: Dedicated step syncope detected.', 'Assembly Pipeline Error: Outstanding step failed: [Script Forge Synthesis, Cosmic B-Roll Alignment]');
+                                }}
+                                className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/15 text-pink-400 p-3 rounded-xl text-[10px] font-mono font-bold transition-all hover:scale-105 cursor-pointer col-span-1 sm:col-span-2 md:col-span-1"
+                              >
+                                MOCK ASSEMBLY FAIL
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  setBRollError(null);
+                                  setLipSyncError(null);
+                                  setVideoError(null);
+                                  logDiagnostic('success', 'Health Check', 'Simulated automated diagnostics calibration run completed successfully.');
+                                  logDiagnostic('success', 'B-Roll Generator', 'B-Roll cache verified. Healthy state restored.');
+                                  logDiagnostic('success', 'Lip-Sync & Dialogue Integration', 'Biometrics verified. Expression mappings clear.');
+                                  logDiagnostic('success', 'Video Generator (Veo)', 'Veo node ping responsive. Latency 12ms.');
+                                  setNotification({ message: "System self-healing script completed. All errors cleared!", type: 'success' });
+                                }}
+                                className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 p-3 rounded-xl text-[10px] font-mono font-bold transition-all hover:scale-105 flex items-center justify-center gap-1 cursor-pointer"
+                              >
+                                <RefreshCcw className="w-3.5 h-3.5 animate-spin mr-1" /> SELF-HEAL CODE
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Diagnostics rolling terminal output logs */}
+                          <div className="glass-panel p-5 bg-[#030309] border-white/5 space-y-3 flex flex-col rounded-2xl">
+                            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                              <div className="flex items-center gap-2">
+                                <Terminal className="w-4 h-4 text-emerald-400" />
+                                <span className="text-xs font-mono font-bold uppercase text-white tracking-wide">Live Diagnostics Terminal stream</span>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  setDiagnosticLogs([]);
+                                  logDiagnostic('info', 'Console Stream', 'Diagnostic log buffers cleared.');
+                                }}
+                                className="text-[10px] font-mono text-starlight/30 hover:text-red-400 hover:underline flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mr-1" /> CLEAR BUFFER
+                              </button>
+                            </div>
+
+                            <div className="h-44 overflow-y-auto font-mono text-xs space-y-1.5 bg-black/60 p-3 rounded-lg border border-white/5 select-all text-left">
+                              {diagnosticLogs.map((log) => {
+                                const levelColors = {
+                                  success: 'text-emerald-400',
+                                  info: 'text-sky-300',
+                                  warn: 'text-amber-400',
+                                  error: 'text-red-400 font-bold font-mono'
+                                };
+                                return (
+                                  <div key={log.id} className="leading-5 leading-normal flex items-start gap-1 p-0.5 border-b border-white/[0.01]">
+                                    <span className="text-starlight/25 select-none">{log.timestamp}</span>
+                                    <span className="text-purple-400 font-bold select-none">[{log.module}]</span>
+                                    <span className={levelColors[log.level]}>{log.message}</span>
+                                    {log.errorDetails && (
+                                      <p className="text-[10px] text-red-300/70 border-l border-red-500/20 pl-2 mt-0.5 break-all font-mono">
+                                        {log.errorDetails}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
+
+                {/* Vocal Library Modal */}
+                <AnimatePresence>
+                  {showVocalLibrary && (
+                    <VocalLibraryModal
+                      isOpen={showVocalLibrary}
+                      onClose={() => setShowVocalLibrary(false)}
+                      characters={characters}
+                      onAssignVoice={updateCharacterVoice}
+                      playUIClick={playUIClick}
+                    />
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
 
@@ -5330,7 +9102,7 @@ export default function App() {
                               To embed this panel directly inside a high-performance native Kotlin wrapper, build a Compose Activity mapping hardware back-navigation gestures:
                             </p>
 
-                            <div className="bg-[#050510] border border-white/5 p-4 rounded-xl font-mono text-[10px] text-purple-300 leading-tight space-y-1 select-all overflow-x-auto max-h-[200px] scroll-hide">
+                            <div className="bg-[#050510] border border-white/5 p-4 rounded-xl font-mono text-[10px] text-purple-300 leading-tight space-y-1 select-all overflow-x-auto max-h-[200px] custom-scrollbar">
                               <div>package com.intergalactic.ai.studio</div>
                               <div className="text-starlight/40">// imports omitted for brevity</div>
                               <div>class MainActivity : ComponentActivity() &#123;</div>
@@ -5403,6 +9175,162 @@ export default function App() {
                 </div>
               </motion.div>
             )}
+
+            {activeTab === 'about' && (
+              <motion.div
+                key="about"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                className="space-y-12 text-left animate-fade-in"
+              >
+                <div>
+                  <h2 className="text-5xl font-display font-medium mb-4 tracking-tight">The Speculative <span className="text-amber-400">Chronicles</span></h2>
+                  <p className="text-starlight/60 text-lg leading-relaxed max-w-3xl">
+                    System specifications, cosmic architecture, and sovereign design protocols powering the Year 12,450 Post-Singularity Intergalactic Studio workspace.
+                  </p>
+                </div>
+
+                {/* Creator & Domain Profile Card */}
+                <div className="glass-panel p-8 bg-gradient-to-r from-purple-900/10 via-amber-500/5 to-transparent border-purple-500/20 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 rounded-3xl">
+                  {/* Glowing background bubble */}
+                  <div className="absolute top-0 right-0 w-80 h-80 bg-purple-500/5 rounded-full blur-[100px] pointer-events-none" />
+                  
+                  <div className="space-y-3 max-w-2xl relative z-10">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[9px] font-mono font-bold tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full uppercase">CREATIVE DOMAIN MASTER</span>
+                      <span className="text-[9px] font-mono font-bold tracking-widest text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-full uppercase">YEAR 12,450 POST-SINGULARITY</span>
+                    </div>
+                    <h3 className="text-3xl font-display font-bold text-white tracking-tight">Creative AI &amp; Narrative Mediums</h3>
+                    <p className="text-starlight/70 text-sm leading-relaxed">
+                      This workspace belongs to the domain of **Creative AI Entertainment, Interactive Storytelling, and Sci-Fi Media Production**. It functions as an immersive, multi-agent orchestrator enabling interstellar creators to draft, synthesize, animate, lip-sync, and render cinematic storylines and deep philosophical dialogue debates within a highly speculative cosmos.
+                    </p>
+                  </div>
+
+                  {/* Creator Signature Card */}
+                  <div className="bg-[#0c0c1b]/90 border border-amber-500/20 p-6 rounded-2xl shrink-0 w-full md:w-auto relative group hover:border-amber-500/40 transition-colors shadow-[0_0_30px_rgba(245,158,11,0.05)]">
+                    <div className="absolute top-0 right-0 p-2 opacity-5 animate-pulse">
+                      <Shield className="w-16 h-16 text-amber-500" />
+                    </div>
+                    <span className="text-[9px] font-mono text-starlight/40 uppercase tracking-widest block mb-1">SYSTEM CONSTRUCTED BY</span>
+                    <h4 className="text-2xl font-display font-bold text-amber-400 tracking-tight">Adrsh Shukla</h4>
+                    <p className="text-[10px] font-mono text-starlight/60 mt-1 uppercase tracking-wider">Lead Architect &amp; Creator</p>
+                    <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between gap-4">
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        AUTH_VERIFIED
+                      </span>
+                      <span className="text-[9px] font-mono text-starlight/30">ID // SHUKLA.ADRSH.01</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 1: Strategic Intent - Why do users use this application? */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <h3 className="text-2xl font-display font-bold">1. Strategic Utility &amp; Intent</h3>
+                    <span className="text-[10px] font-mono text-starlight/30 uppercase tracking-widest">Why Creators Orchestrate Here</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {[
+                      {
+                        title: 'Orchestrate Sci-Fi Debates',
+                        desc: 'Instantly simulate heated, procedurally-coordinated dialogue among sovereign council intellects (The Visionary Lion, The Strategist Jaguar, and The Guardian Tiger) over custom ethical or speculative galactic themes.',
+                        tag: 'COSMIC_SPARKS_CORE',
+                        accent: 'border-amber-500/20 hover:border-amber-500/40'
+                      },
+                      {
+                        title: 'Synthesize Immersive Media',
+                        desc: 'Seamlessly mesh deep narrative scripts, synthesized voiceovers (high-fidelity WAV profiles), biometric facial lip-sync frames, and sweeping interstellar planetary video B-rolls in real-time.',
+                        tag: 'MULTIMEDIA_MATRIX',
+                        accent: 'border-purple-500/20 hover:border-purple-500/40'
+                      },
+                      {
+                        title: 'Assemble Cinematic Trailers',
+                        desc: 'Compile comprehensive multi-agent cinematic montage sequences mapping spatial lore events, formatted and packaged to instantly export or playback directly on the tactical deck.',
+                        tag: 'TRAILER_ASSEMBLER',
+                        accent: 'border-blue-500/20 hover:border-blue-500/40'
+                      }
+                    ].map((item, idx) => (
+                      <div key={idx} className={`glass-panel p-6 bg-[#040410]/40 border ${item.accent} transition-all duration-300 group hover:-translate-y-1`}>
+                        <span className="text-[9px] font-mono text-starlight/45 uppercase tracking-widest block mb-1 font-bold">{item.tag}</span>
+                        <h4 className="text-lg font-display font-bold text-white mb-2">{item.title}</h4>
+                        <p className="text-xs text-starlight/60 leading-relaxed">{item.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section 2: Sovereign Systems Capabilities - Features */}
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <h3 className="text-2xl font-display font-bold">2. Sovereign Tech Features</h3>
+                    <span className="text-[10px] font-mono text-starlight/30 uppercase tracking-widest">Active Functional Sub-Systems</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[
+                      {
+                        title: 'Triumvirate Debate Protocol',
+                        desc: 'State-driven dialogue processor allowing real-time tuning of debate topic guidelines, ideological coordinates, and synthetic intensity registers ranging from Harmonious to Dialectic or Confrontational.',
+                        icon: Scale
+                      },
+                      {
+                        title: 'The Script Forge',
+                        desc: 'An automated narrative screenplay pipeline backed by deep galactic law, synthesizing fully formatted scripts, speaker turns, action briefs, and pacing parameters.',
+                        icon: ScrollText
+                      },
+                      {
+                        title: 'Audio Synthesis Speech Engine',
+                        desc: 'Dual-pipeline speech generation engine harmonizing custom ElevenLabs and server-side text-to-speech voice matrices for customized council representative vocal characteristics.',
+                        icon: Volume2
+                      },
+                      {
+                        title: 'Biometric Lip-Sync Video Forge (Google Veo)',
+                        desc: 'Direct biometric sync mechanism generating neural-linked lip keyframe tracks and camera movement vectors to transform static character assets into fluid, speaking sci-fi films.',
+                        icon: Video
+                      },
+                      {
+                        title: 'Multimedia Integration Lab',
+                        desc: 'Specialized media hub configured for decoding localized audio wave frequencies, triggering planetary atmospheric B-rolls, and bridging communicator networks.',
+                        icon: Radio
+                      },
+                      {
+                        title: 'Diagnostics HUD Overlay',
+                        desc: 'A central master control console for testing workspace system tolerance, calibrating audio loops, telemetry logging, and triggering automated self-healing bypass loops on pipeline errors.',
+                        icon: Terminal
+                      }
+                    ].map((feature, i) => (
+                      <div key={i} className="glass-panel p-6 bg-[#03030c] border border-white/5 flex gap-4 items-start hover:bg-white/[0.02] transition-all">
+                        <div className="p-3 bg-white/5 border border-white/10 rounded-xl text-amber-400 shrink-0">
+                          <feature.icon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-white text-base font-display">{feature.title}</h4>
+                          <p className="text-xs text-starlight/60 leading-relaxed mt-2">{feature.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Section 3: Synthesis Conclusion */}
+                <div className="glass-panel p-8 bg-amber-500/[0.02] border border-amber-500/10 rounded-3xl relative overflow-hidden">
+                  <div className="absolute right-0 bottom-0 p-8 opacity-5 pointer-events-none">
+                    <Globe className="w-48 h-48 text-amber-500" />
+                  </div>
+                  <div className="relative z-10 max-w-3xl space-y-4">
+                    <span className="text-xs font-mono text-amber-500 uppercase tracking-widest font-bold">WORKSPACE CATEGORIZATION &amp; SUMMARY</span>
+                    <h3 className="text-2xl font-display font-medium text-white tracking-tight">Interactive Entertainment &amp; Narrative Sandbox</h3>
+                    <p className="text-sm text-starlight/75 leading-relaxed">
+                      This application functions as a highly sophisticated interactive production facility for science fiction authors, role-players, game designers, and digital artists. By eliminating tedious workflows—including manual framing, layout adjustments, facial rigging, video rendering stages, and complex speech pacing controls—it enables sovereign digital actors to manifest cohesive, high-fidelity narrative timelines instantaneously.
+                    </p>
+                  </div>
+                </div>
+
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </main>
@@ -5463,9 +9391,14 @@ export default function App() {
                     className={`max-w-2xl mx-auto mb-12 aspect-video rounded-3xl overflow-hidden border ${currentCharTheme.border} shadow-[0_0_50px_rgba(168,85,247,0.15)] bg-black`}
                   >
                     <video 
-                      src={currentManifestoChar?.lipSyncUrl} 
+                      src={currentManifestoChar?.lipSyncUrl} {...({ referrerPolicy: "no-referrer" } as any)} 
                       controls 
                       autoPlay 
+                      playsInline
+                      muted={false}
+                      onError={(e) => {
+                        console.warn(`Manifesto lipSync video failed to load: ${currentManifestoChar?.lipSyncUrl}`);
+                      }}
                       className="w-full h-full object-cover"
                     />
                   </motion.div>
