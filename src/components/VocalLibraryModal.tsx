@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { formatAudioDataUri } from '../App';
 import { 
   X, 
   Volume2, 
@@ -192,13 +193,7 @@ export const VocalLibraryModal: React.FC<VocalLibraryModalProps> = ({
         throw new Error('No audio wave payload received from synthesizer.');
       }
 
-      let cleanBase64 = data.audioData;
-      if (cleanBase64.includes(';base64,')) {
-        cleanBase64 = cleanBase64.split(';base64,')[1];
-      }
-      
-      const mimeType = data.mimeType || 'audio/mp3';
-      const audioUrl = `data:${mimeType};base64,${cleanBase64}`;
+      const audioUrl = formatAudioDataUri(data.audioData, data.mimeType || 'audio/wav');
       
       // Stop old playback if working
       stopPlayback();

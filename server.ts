@@ -209,6 +209,30 @@ function generateProceduralSynthVoiceWav(text: string): string {
   return buffer.toString("base64");
 }
 
+// Convert raw 16-bit linear PCM byte buffer into valid standard WAV container buffer
+function pcmToWavBuffer(pcmBuffer: Buffer, sampleRate: number = 24000, numChannels: number = 1, bitDepth: number = 16): Buffer {
+  const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+  const blockAlign = (numChannels * bitDepth) / 8;
+  const dataSize = pcmBuffer.length;
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // Audio format 1 = PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitDepth, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([header, pcmBuffer]);
+}
+
 // API Routes
 app.post("/api/generate-script", async (req, res) => {
   const { phase, topic, context, tone = "profound", debateMode = false, debateSettings = {} } = req.body;
@@ -483,10 +507,10 @@ app.get("/api/generate-broll", (req, res) => {
   const bRolls = [
     { id: 'b1', url: "https://vjs.zencdn.net/v/oceans.mp4", label: "Deep Space Ocean" },
     { id: 'b2', url: "https://media.w3.org/2010/05/sintel/trailer.mp4", label: "Ancient Starfields" },
-    { id: 'b3', url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", label: "Nebula Pulse" },
-    { id: 'b4', url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", label: "Quantum Flux" },
-    { id: 'b5', url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", label: "Binary Star Flare" },
-    { id: 'b6', url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", label: "Hyper-drive Distortion" }
+    { id: 'b3', url: "https://media.w3.org/2010/05/bunny/trailer.mp4", label: "Nebula Pulse" },
+    { id: 'b4', url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4", label: "Quantum Flux" },
+    { id: 'b5', url: "https://www.w3schools.com/html/mov_bbb.mp4", label: "Binary Star Flare" },
+    { id: 'b6', url: "https://www.w3schools.com/html/movie.mp4", label: "Hyper-drive Distortion" }
   ];
   const randomIndex = Math.floor(Math.random() * bRolls.length);
   res.json(bRolls[randomIndex]);
@@ -722,9 +746,33 @@ app.post("/api/text-to-speech", async (req, res) => {
 
     try {
       if (base64Audio) {
+        let finalBase64 = base64Audio;
+        let finalMime = mimeType || 'audio/wav';
+
+        // Gemini audio output is 16-bit linear PCM (usually 24000Hz).
+        // HTML5 Audio elements cannot play containerless PCM, so wrap into a standard WAV container.
+        if (!mimeType || mimeType.includes('pcm') || mimeType.includes('raw') || mimeType.includes('audio/wav') || !mimeType.includes('mpeg')) {
+          try {
+            let sampleRate = 24000;
+            const rateMatch = mimeType ? mimeType.match(/rate=(\d+)/) : null;
+            if (rateMatch) {
+              sampleRate = parseInt(rateMatch[1], 10) || 24000;
+            }
+            const pcmBuf = Buffer.from(base64Audio, 'base64');
+            // If it doesn't already have a RIFF header, wrap it in WAV
+            if (pcmBuf.length < 12 || pcmBuf.toString('ascii', 0, 4) !== 'RIFF') {
+              const wavBuf = pcmToWavBuffer(pcmBuf, sampleRate);
+              finalBase64 = wavBuf.toString('base64');
+            }
+            finalMime = 'audio/wav';
+          } catch (convErr) {
+            console.warn("PCM to WAV packaging notice:", convErr);
+          }
+        }
+
         return res.json({ 
-          audioData: base64Audio, 
-          mimeType: mimeType || 'audio/mp3',
+          audioData: finalBase64, 
+          mimeType: finalMime,
           voiceUsed: selectedVoice,
           provider: 'gemini',
           modelUsed: usedModel
@@ -789,11 +837,11 @@ app.post("/api/generate-council-video", async (req, res) => {
       const jobId = `sim-${characterId || 'unknown'}-${Date.now()}`;
       let videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
       if (String(characterId).includes('lion')) {
-        videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
+        videoUrl = "https://vjs.zencdn.net/v/oceans.mp4";
       } else if (String(characterId).includes('jaguar')) {
-        videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+        videoUrl = "https://media.w3.org/2010/05/bunny/trailer.mp4";
       } else if (String(characterId).includes('tiger')) {
-        videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4";
+        videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
       }
       
       simulatedJobs.set(jobId, { startTime: Date.now(), videoUrl });
@@ -880,9 +928,9 @@ app.post("/api/generate-council-video", async (req, res) => {
     if (String(characterId).includes('lion')) {
       videoUrl = "https://vjs.zencdn.net/v/oceans.mp4";
     } else if (String(characterId).includes('jaguar')) {
-      videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+      videoUrl = "https://media.w3.org/2010/05/bunny/trailer.mp4";
     } else if (String(characterId).includes('tiger')) {
-      videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4";
+      videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
     }
     
     simulatedJobs.set(jobId, { startTime: Date.now(), videoUrl });
@@ -905,9 +953,9 @@ app.get("/api/check-video-status", async (req, res) => {
       if (!job) {
         return res.json({
           status: 'completed',
-          videoUrl: String(videoId).includes('lion') ? "https://media.w3.org/2010/05/sintel/trailer.mp4" :
-                    String(videoId).includes('jaguar') ? "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" :
-                    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+          videoUrl: String(videoId).includes('lion') ? "https://vjs.zencdn.net/v/oceans.mp4" :
+                    String(videoId).includes('jaguar') ? "https://media.w3.org/2010/05/bunny/trailer.mp4" :
+                    "https://media.w3.org/2010/05/sintel/trailer.mp4"
         });
       }
       const url = job.videoUrl;
@@ -1096,21 +1144,22 @@ app.post("/api/generate-video-text", async (req, res) => {
     // Fallback: Create high-fidelity Simulated Veo job
     console.info(`[Veo Video Engine] Activating simulation fallback for text-to-video...`);
     const jobId = `sim-veo-${Date.now()}`;
-    let videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+    let videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
     const lPrompt = (prompt || "").toLowerCase();
     
-    if (lPrompt.includes("shield") || lPrompt.includes("warp") || lPrompt.includes("protect")) {
+    if (lPrompt.includes("shield") || lPrompt.includes("warp") || lPrompt.includes("protect") || lPrompt.includes("ocean") || lPrompt.includes("water")) {
       videoUrl = "https://vjs.zencdn.net/v/oceans.mp4";
-    } else if (lPrompt.includes("fuel") || lPrompt.includes("fire") || lPrompt.includes("burn") || lPrompt.includes("explosion") || lPrompt.includes("supernova")) {
-      videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
-    } else if (lPrompt.includes("nebula") || lPrompt.includes("gas") || lPrompt.includes("space") || lPrompt.includes("starship") || lPrompt.includes("ship")) {
-      videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4";
+    } else if (lPrompt.includes("fuel") || lPrompt.includes("fire") || lPrompt.includes("burn") || lPrompt.includes("explosion") || lPrompt.includes("supernova") || lPrompt.includes("volcano") || lPrompt.includes("disaster") || lPrompt.includes("devil")) {
+      videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
+    } else if (lPrompt.includes("nebula") || lPrompt.includes("gas") || lPrompt.includes("space") || lPrompt.includes("starship") || lPrompt.includes("ship") || lPrompt.includes("typhoon") || lPrompt.includes("tornado")) {
+      videoUrl = "https://media.w3.org/2010/05/bunny/trailer.mp4";
     } else {
       const list = [
         "https://vjs.zencdn.net/v/oceans.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        "https://media.w3.org/2010/05/sintel/trailer.mp4",
+        "https://media.w3.org/2010/05/bunny/trailer.mp4",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+        "https://www.w3schools.com/html/mov_bbb.mp4"
       ];
       videoUrl = list[Math.floor(Date.now() % list.length)];
     }
@@ -1126,7 +1175,7 @@ app.post("/api/generate-video-text", async (req, res) => {
   } catch (error: any) {
     console.log("[Veo Video Engine] Text-to-video alignment redirected. Utilizing high-fidelity simulation pool:", cleanApiErrorMessage(error));
     const jobId = `sim-veo-err-${Date.now()}`;
-    const videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4";
+    const videoUrl = "https://media.w3.org/2010/05/sintel/trailer.mp4";
     simulatedVeoJobs.set(jobId, { startTime: Date.now(), videoUrl, prompt: prompt || "" });
     return res.json({
       provider: 'simulated_veo',

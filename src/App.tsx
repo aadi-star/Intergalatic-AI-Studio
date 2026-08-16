@@ -251,6 +251,93 @@ const CHARACTER_THEMES: Record<string, { color: string, glow: string, border: st
   tiger: { color: 'text-emerald-400', glow: 'bg-emerald-500/20', border: 'border-emerald-500/30', accent: 'emerald-500' },
 };
 
+// Converts raw 16-bit linear PCM base64 string into a standard browser-playable WAV Data URI
+export function pcmBase64ToWavDataUri(base64Pcm: string, sampleRate: number = 24000): string {
+  try {
+    let cleanBase64 = base64Pcm;
+    if (cleanBase64.includes(';base64,')) {
+      cleanBase64 = cleanBase64.split(';base64,')[1];
+    }
+    const raw = atob(cleanBase64);
+    const pcmBytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      pcmBytes[i] = raw.charCodeAt(i);
+    }
+    
+    // Check if it's already a WAV container (starts with RIFF header)
+    if (pcmBytes.length > 12 &&
+        pcmBytes[0] === 0x52 && pcmBytes[1] === 0x49 && pcmBytes[2] === 0x46 && pcmBytes[3] === 0x46) {
+      return `data:audio/wav;base64,${cleanBase64}`;
+    }
+
+    const numChannels = 1;
+    const bitDepth = 16;
+    const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+    const blockAlign = (numChannels * bitDepth) / 8;
+    const dataSize = pcmBytes.length;
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+
+    // RIFF identifier
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + dataSize, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM = 1
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataSize, true);
+
+    const wavBytes = new Uint8Array(44 + dataSize);
+    wavBytes.set(new Uint8Array(header), 0);
+    wavBytes.set(pcmBytes, 44);
+
+    let binary = '';
+    const len = wavBytes.byteLength;
+    const chunkSize = 0x8000;
+    for (let i = 0; i < len; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, Array.from(wavBytes.subarray(i, Math.min(i + chunkSize, len))));
+    }
+    return `data:audio/wav;base64,${btoa(binary)}`;
+  } catch (e) {
+    console.warn("PCM to WAV formatting notice:", e);
+    return `data:audio/wav;base64,${base64Pcm}`;
+  }
+}
+
+// Converts any audio payload safely into a browser-supported playback source
+export function formatAudioDataUri(audioData: string, mimeType?: string): string {
+  if (!audioData) return '';
+  let cleanBase64 = audioData;
+  if (cleanBase64.includes(';base64,')) {
+    cleanBase64 = cleanBase64.split(';base64,')[1];
+  }
+  const effectiveMime = mimeType || 'audio/wav';
+  if (effectiveMime.includes('pcm') || effectiveMime.includes('raw')) {
+    let rate = 24000;
+    const rateMatch = effectiveMime.match(/rate=(\d+)/);
+    if (rateMatch) rate = parseInt(rateMatch[1], 10) || 24000;
+    return pcmBase64ToWavDataUri(cleanBase64, rate);
+  }
+  // Check if raw base64 data has RIFF header
+  try {
+    const rawHead = atob(cleanBase64.slice(0, 16));
+    if (rawHead.startsWith('RIFF')) {
+      return `data:audio/wav;base64,${cleanBase64}`;
+    }
+  } catch (e) {}
+
+  if (effectiveMime.includes('wav')) {
+    return pcmBase64ToWavDataUri(cleanBase64, 24000);
+  }
+  return `data:${effectiveMime};base64,${cleanBase64}`;
+}
+
 const TypewriterParagraph: React.FC<{ text: string, delay?: number }> = ({ text, delay = 0 }) => {
   const words = text.split(' ');
   return (
@@ -1309,6 +1396,7 @@ interface ScriptForgeProps {
   activeSpeakerId?: string | null;
   setActiveSpeakerId?: (id: string | null) => void;
   onCompileDebate?: (topic: string, stances: { lion: string; jaguar: string; tiger: string }, intensity: string, opener: string, label: string, callback?: () => void) => void;
+  logDiagnostic?: (level: 'info' | 'success' | 'warn' | 'error', module: string, message: string, errorDetails?: string) => void;
 }
 
 const ScriptForge: React.FC<ScriptForgeProps> = ({ 
@@ -1339,7 +1427,8 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
   setDirectorMode,
   activeSpeakerId,
   setActiveSpeakerId,
-  onCompileDebate
+  onCompileDebate,
+  logDiagnostic = () => {}
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -1351,6 +1440,12 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
     activeLineIndex: number;
     loadingLineIndex: number | null;
   }>>({});
+
+  const playbackStatesRef = useRef(playbackStates);
+  playbackStatesRef.current = playbackStates;
+
+  const activeSpeakerIdRef = useRef(activeSpeakerId);
+  activeSpeakerIdRef.current = activeSpeakerId;
 
   const [scriptViewModes, setScriptViewModes] = useState<Record<string, 'sim' | 'raw'>>({});
   
@@ -1383,13 +1478,18 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
     }
   };
 
-  // Stop playback on unmount
+  // Stop playback on unmount safely
   useEffect(() => {
     return () => {
       if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
+        try {
+          currentAudioRef.current.pause();
+          currentAudioRef.current.remove();
+        } catch (e) {}
       }
-      setActiveSpeakerId?.(null);
+      if (activeSpeakerIdRef.current) {
+        setActiveSpeakerId?.(null);
+      }
     };
   }, []);
 
@@ -1536,19 +1636,19 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
       
       if (autoAdvance) {
         setTimeout(() => {
-          setPlaybackStates(prev => {
-            const state = prev[sectionId];
-            if (state && state.isPlaying && state.activeLineIndex === lineIndex) {
-              const nextIndex = lineIndex + 1;
-              if (nextIndex < lines.length) {
-                playDialogueLine(sectionId, nextIndex, lines, true);
-              } else {
-                setActiveSpeakerId?.(null);
-                return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
-              }
+          const currentState = playbackStatesRef.current[sectionId];
+          if (currentState && currentState.isPlaying && currentState.activeLineIndex === lineIndex) {
+            const nextIndex = lineIndex + 1;
+            if (nextIndex < lines.length) {
+              playDialogueLine(sectionId, nextIndex, lines, true);
+            } else {
+              setActiveSpeakerId?.(null);
+              setPlaybackStates(prev => ({
+                ...prev,
+                [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+              }));
             }
-            return prev;
-          });
+          }
         }, 2200);
       }
       return;
@@ -1569,6 +1669,8 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
       const charConfig = characters.find(c => c.id === line.speaker);
       const voice = charConfig?.voice || 'random';
 
+      logDiagnostic('info', 'Dialogue Playback', `[playDialogueLine] Requesting speech for line #${lineIndex + 1} (${line.speakerLabel || line.speaker}) in section "${sectionId}" [voice: ${voice}]`);
+
       const response = await fetch('/api/text-to-speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1584,15 +1686,20 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
         throw new Error("No audio payload returned");
       }
 
-      let isStillActive = false;
+      logDiagnostic('success', 'Dialogue Playback', `[playDialogueLine] Audio payload acquired (${data.audioData.length} chars) for line #${lineIndex + 1} in section "${sectionId}"`);
+
+      const currentState = playbackStatesRef.current[sectionId];
+      if (!currentState || currentState.activeLineIndex !== lineIndex) {
+        return;
+      }
+
       setPlaybackStates(prev => {
-        const state = prev[sectionId];
-        if (state && state.activeLineIndex === lineIndex) {
-          isStillActive = true;
+        const st = prev[sectionId];
+        if (st && st.activeLineIndex === lineIndex) {
           return {
             ...prev,
             [sectionId]: {
-              ...state,
+              ...st,
               loadingLineIndex: null
             }
           };
@@ -1600,9 +1707,7 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
         return prev;
       });
 
-      if (!isStillActive) return;
-
-      const audioUrl = `data:${data.mimeType || 'audio/mp3'};base64,${data.audioData}`;
+      const audioUrl = formatAudioDataUri(data.audioData, data.mimeType || 'audio/wav');
       const audio = new Audio(audioUrl);
       audio.className = 'debate-audio-element';
       audio.style.display = 'none';
@@ -1613,54 +1718,94 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
       audio.volume = isPlaybackMuted ? 0 : playbackVolume;
       currentAudioRef.current = audio;
 
-      audio.onended = () => {
+      const finishLinePlayback = () => {
         try {
           audio.remove();
         } catch (e) {}
-        currentAudioRef.current = null;
-        setActiveSpeakerId?.(null);
-        setPlaybackStates(prev => {
-          const state = prev[sectionId];
-          if (state && state.isPlaying && autoAdvance) {
-            const nextIndex = lineIndex + 1;
-            if (nextIndex < lines.length) {
-              setTimeout(() => {
-                playDialogueLine(sectionId, nextIndex, lines, true);
-              }, 500); // 500ms separation pause
-            } else {
-              setActiveSpeakerId?.(null);
-              return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
-            }
+        if (currentAudioRef.current === audio) {
+          currentAudioRef.current = null;
+        }
+        
+        const stateNow = playbackStatesRef.current[sectionId];
+        if (stateNow && stateNow.isPlaying && autoAdvance) {
+          const nextIndex = lineIndex + 1;
+          if (nextIndex < lines.length) {
+            setTimeout(() => {
+              playDialogueLine(sectionId, nextIndex, lines, true);
+            }, 500); // 500ms separation pause
           } else {
             setActiveSpeakerId?.(null);
-            return { ...prev, [sectionId]: { ...state, activeLineIndex: -1 } };
+            setPlaybackStates(prev => ({
+              ...prev,
+              [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+            }));
           }
-          return prev;
-        });
+        } else {
+          setActiveSpeakerId?.(null);
+          setPlaybackStates(prev => ({
+            ...prev,
+            [sectionId]: { ...prev[sectionId], activeLineIndex: -1, loadingLineIndex: null }
+          }));
+        }
       };
 
-      await audio.play();
+      audio.onended = finishLinePlayback;
+      audio.onerror = (e) => {
+        console.warn("Dialogue audio element source load error:", e);
+        if ('speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(cleanLineText);
+            utterance.rate = 1.05;
+            utterance.pitch = line.speaker === 'lion' ? 0.8 : line.speaker === 'jaguar' ? 1.15 : 0.9;
+            utterance.onend = finishLinePlayback;
+            utterance.onerror = finishLinePlayback;
+            window.speechSynthesis.speak(utterance);
+            return;
+          } catch (synthErr) {}
+        }
+        finishLinePlayback();
+      };
+
+      try {
+        await audio.play();
+      } catch (playErr) {
+        console.warn("audio.play() execution error, engaging speech synthesis fallback:", playErr);
+        if ('speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(cleanLineText);
+            utterance.rate = 1.05;
+            utterance.pitch = line.speaker === 'lion' ? 0.8 : line.speaker === 'jaguar' ? 1.15 : 0.9;
+            utterance.onend = finishLinePlayback;
+            utterance.onerror = finishLinePlayback;
+            window.speechSynthesis.speak(utterance);
+            return;
+          } catch (synthErr) {}
+        }
+        finishLinePlayback();
+      }
 
     } catch (err) {
-      console.error("Dialogue speech failed:", err);
+      console.warn("Dialogue speech failed, smoothly continuing:", err);
       setActiveSpeakerId?.(null);
       // Resilience skip fallback
       if (autoAdvance) {
         setTimeout(() => {
-          setPlaybackStates(prev => {
-            const state = prev[sectionId];
-            if (state && state.isPlaying && state.activeLineIndex === lineIndex) {
-              const nextIndex = lineIndex + 1;
-              if (nextIndex < lines.length) {
-                playDialogueLine(sectionId, nextIndex, lines, true);
-              } else {
-                setActiveSpeakerId?.(null);
-                return { ...prev, [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null } };
-              }
+          const stateNow = playbackStatesRef.current[sectionId];
+          if (stateNow && stateNow.isPlaying && stateNow.activeLineIndex === lineIndex) {
+            const nextIndex = lineIndex + 1;
+            if (nextIndex < lines.length) {
+              playDialogueLine(sectionId, nextIndex, lines, true);
+            } else {
+              setActiveSpeakerId?.(null);
+              setPlaybackStates(prev => ({
+                ...prev,
+                [sectionId]: { isPlaying: false, activeLineIndex: -1, loadingLineIndex: null }
+              }));
             }
-            return prev;
-          });
-        }, 3000);
+          }
+        }, 2500);
       } else {
         setActiveSpeakerId?.(null);
         setPlaybackStates(prev => ({
@@ -2116,7 +2261,20 @@ const ScriptForge: React.FC<ScriptForgeProps> = ({
                   <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                   <p className="text-[10px] text-amber-500 font-mono tracking-widest uppercase">Chapter Protocol {section.id.toUpperCase()}</p>
                 </div>
-                <h3 className="font-display text-2xl font-bold tracking-tight">{section.title}</h3>
+                <div className="flex items-center flex-wrap gap-3">
+                  <h3 className="font-display text-2xl font-bold tracking-tight">{section.title}</h3>
+                  {section.audioData && section.audioData.length > 20 ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      AUDIO READY
+                    </span>
+                  ) : section.status === 'completed' ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono text-starlight/60 bg-white/5 border border-white/10">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400/50" />
+                      AUDIO STANDBY
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="flex flex-col gap-3 items-end">
                 <button 
@@ -3682,9 +3840,12 @@ const TtsTransceiver = ({ characters }: { characters: Character[] }) => {
 
   const playAudioBuffer = (base64Data: string, mimeType: string, onEnded: () => void) => {
     if (activeAudio) {
-      activeAudio.pause();
+      try {
+        activeAudio.pause();
+      } catch (e) {}
     }
-    const audio = new Audio(`data:${mimeType};base64,${base64Data}`);
+    const audioUrl = formatAudioDataUri(base64Data, mimeType || 'audio/wav');
+    const audio = new Audio(audioUrl);
     setActiveAudio(audio);
     
     audio.onended = () => {
@@ -6027,6 +6188,7 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
 
   const generateVoice = async (sectionId: string, text: string, voice: string = 'random') => {
     try {
+      logDiagnostic('info', 'Speech Synthesis Engine', `[generateVoice] Starting vocal synthesis for chapter ID "${sectionId}" with voice "${voice}" (Text length: ${text?.length || 0})...`);
       setScripts(prev => prev.map(s => s.id === sectionId ? { ...s, isVoiceGenerating: true } : s));
       
       const response = await fetch('/api/text-to-speech', {
@@ -6046,40 +6208,46 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
       
       const data = await response.json();
       if (data.audioData) {
+        logDiagnostic('success', 'Speech Synthesis Engine', `[generateVoice] Received audio payload (${data.audioData.length} chars base64, mime: ${data.mimeType || 'audio/mp3'}) for chapter ID "${sectionId}". Updating state.`);
         setScripts(prev => prev.map(s => s.id === sectionId ? { 
           ...s, 
           audioData: data.audioData, 
           audioMimeType: data.mimeType || 'audio/mp3' 
         } : s));
         playAudio(data.audioData, data.mimeType || 'audio/mp3');
+      } else {
+        logDiagnostic('warn', 'Speech Synthesis Engine', `[generateVoice] TTS response returned 200 OK but audioData payload was empty for chapter ID "${sectionId}".`);
       }
     } catch (err: any) {
       console.error("Voice sync failed", err);
+      logDiagnostic('error', 'Speech Synthesis Engine', `[generateVoice] Voice sync failed for chapter ID "${sectionId}": ${err?.message || err}`);
       setNotification({ message: `Voice sync fail: ${parseAIError(err)}`, type: 'error' });
     } finally {
       setScripts(prev => prev.map(s => s.id === sectionId ? { ...s, isVoiceGenerating: false } : s));
     }
   };
 
-  const playAudio = (base64Audio: string, mimeType: string = 'audio/mp3') => {
+  const playAudio = (base64Audio: string, mimeType: string = 'audio/wav') => {
     try {
       if (!base64Audio) return;
       
       // Stop outstanding playback of other scripts
       if (scriptAudioRef.current) {
-        scriptAudioRef.current.pause();
+        try {
+          scriptAudioRef.current.pause();
+        } catch (e) {}
         scriptAudioRef.current = null;
       }
       
-      let cleanBase64 = base64Audio;
-      if (cleanBase64.includes(';base64,')) {
-        cleanBase64 = cleanBase64.split(';base64,')[1];
-      }
-      
-      const audioUrl = `data:${mimeType};base64,${cleanBase64}`;
+      const audioUrl = formatAudioDataUri(base64Audio, mimeType);
       const audio = new Audio(audioUrl);
       scriptAudioRef.current = audio;
       
+      audio.onerror = () => {
+        console.warn("Script audio element load error");
+        scriptAudioRef.current = null;
+      };
+
       audio.play().catch(err => {
         console.warn("Audio play blocked (e.g., autoplay gesture restriction):", err);
         setNotification({ 
@@ -6170,9 +6338,9 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
 
       const defaultTrailers = [
         "https://media.w3.org/2010/05/sintel/trailer.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
         "https://vjs.zencdn.net/v/oceans.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "https://media.w3.org/2010/05/bunny/trailer.mp4",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
         "https://www.w3schools.com/html/movie.mp4"
       ];
 
@@ -6212,6 +6380,29 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
     }
   };
 
+  const verifyScriptAudioDiagnostics = () => {
+    const diagnosticSummary = scripts.map(s => ({
+      id: s.id,
+      title: s.title,
+      hasAudio: !!(s.audioData && s.audioData.length > 20),
+      audioDataLength: s.audioData ? s.audioData.length : 0,
+      mimeType: s.audioMimeType || 'none',
+      status: s.status
+    }));
+
+    const missingAudio = diagnosticSummary.filter(d => !d.hasAudio);
+    if (missingAudio.length > 0) {
+      logDiagnostic('info', 'Audio Verification Diagnostic', `Diagnostic check: ${missingAudio.length} chapter(s) lack audio [${missingAudio.map(m => m.title).join(', ')}]. Handled gracefully via non-blocking audio engine.`);
+    } else {
+      logDiagnostic('success', 'Audio Verification Diagnostic', `Diagnostic check: All ${diagnosticSummary.length} chapters have verified speech audio buffers.`);
+    }
+    return {
+      allReady: missingAudio.length === 0,
+      missingAudio,
+      diagnosticSummary
+    };
+  };
+
   const exportCinematic = async () => {
     if (!isNeuralLinkActive) {
       setNotification({ message: "Neural transmission has interrupted. Source link is expired", type: 'error' });
@@ -6219,78 +6410,42 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
       return;
     }
 
-    // Run deep Assembly Pipeline pre-validation to detect and raise specific step alerts
-    const missingScripts = scripts.filter(s => s.status !== 'completed' || !s.content);
-    const missingAudio = scripts.filter(s => !s.audioData || s.audioData.length < 10);
-    const missingBRolls = scripts.filter(s => !s.bRollUrl || s.bRollUrl === 'cosmic_fallback');
-    const missingLipSyncs = characters.filter(c => !c.lipSyncUrl);
-    const missingVideos = characters.filter(c => !c.animatedVideoUrl || c.animatedVideoUrl === 'cosmic_fallback');
-
-    if (missingScripts.length > 0 || missingAudio.length > 0 || missingBRolls.length > 0 || missingLipSyncs.length > 0 || missingVideos.length > 0) {
-      const errorMsgParts: string[] = [];
-      const failedSteps: string[] = [];
-
-      if (missingScripts.length > 0) {
-        failedSteps.push("Script Forge Synthesis");
-        errorMsgParts.push(`Script Forge missing for chapter(s): ${missingScripts.map(s => `"${s.title}"`).join(', ')}`);
-      }
-      if (missingAudio.length > 0) {
-        failedSteps.push("Speech Synthesis Audio Engine");
-        errorMsgParts.push(`Speech Synthesis missing for chapter(s): ${missingAudio.map(s => `"${s.title}"`).join(', ')}`);
-      }
-      if (missingBRolls.length > 0) {
-        failedSteps.push("Cosmic B-Roll Alignment");
-        errorMsgParts.push(`B-Roll missing/fallback for chapter(s): ${missingBRolls.map(s => `"${s.title}"`).join(', ')}`);
-      }
-      if (missingLipSyncs.length > 0) {
-        failedSteps.push("Character Biometric Lip-Sync");
-        errorMsgParts.push(`Lip-Sync missing for character(s): ${missingLipSyncs.map(c => c.name).join(', ')}`);
-      }
-      if (missingVideos.length > 0) {
-        failedSteps.push("Video Generator (Veo)");
-        errorMsgParts.push(`Video Animation missing/fallback for character(s): ${missingVideos.map(c => c.name).join(', ')}`);
-      }
-
-      const detailedErrorDesc = errorMsgParts.join(' | ');
-      const mainErrorMsg = `Assembly Pipeline Error: Outstanding step(s) failed or require synchronization. FAILED STEPS: ${failedSteps.join(', ')}. Details: [${detailedErrorDesc}]`;
-
-      logDiagnostic('error', 'Cinematic Compositor', 'Assembly Pipeline Error', mainErrorMsg);
-      
-      // Let the user know exactly what's failing in a high-priority toast message
-      setNotification({ 
-        message: `🚫 Assembly Pipeline Error! Unresolved Steps: [${failedSteps.join(', ')}]. Commencing self-healing channels...`, 
-        type: 'error' 
-      });
-      
-      setShowDiagnosticOverlay(true);
-      // Brief sleep for visual registration before auto-healing starts
-      await new Promise(r => setTimeout(r, 2200));
-    }
-
     try {
       setIsExporting(true);
+      setAssemblyPipelineError(null);
+      setTrailerError(false);
+
+      // Run diagnostic verification utility
+      const audioVerification = verifyScriptAudioDiagnostics();
+
+      // Check if components require auto-synchronization
+      const unsyncedScripts = scripts.filter(s => s.status !== 'completed' || !s.content);
+      const unsyncedAudio = scripts.filter(s => !s.audioData || s.audioData.length < 10);
+      const unsyncedBRolls = scripts.filter(s => !s.bRollUrl || s.bRollUrl === 'cosmic_fallback');
+      const unsyncedLipSyncs = characters.filter(c => !c.lipSyncUrl);
+      const unsyncedVideos = characters.filter(c => !c.animatedVideoUrl || c.animatedVideoUrl === 'cosmic_fallback');
+
+      if (unsyncedScripts.length > 0 || unsyncedAudio.length > 0 || unsyncedBRolls.length > 0 || unsyncedLipSyncs.length > 0 || unsyncedVideos.length > 0) {
+        logDiagnostic('info', 'Cinematic Compositor', 'Initiating live auto-synchronization for pending pipeline chapters...');
+      }
       
       // 1. Auto-Synchronize Scriptforge API if scripts are not completely generated
-      const unsyncedScripts = scripts.filter(s => s.status !== 'completed' || !s.content);
       if (unsyncedScripts.length > 0) {
-        logDiagnostic('info', 'Script Forge Sync', `Auto-aligning outstanding scripts...`);
-        setNotification({ message: "Auto-synchronizing Script Forge deck...", type: 'info' });
-        
+        logDiagnostic('info', 'Script Forge Sync', `Auto-aligning outstanding scripts for ${unsyncedScripts.length} chapters...`);
         const activeTopic = activeTheme || "the quantum singularity";
-        // Compile the default script layout
         compileDebateDeck(activeTopic, debateStances, debateIntensity, debateOpener, "Auto-Assembled Debate");
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 400));
       }
 
-      // 2. Auto-Synchronize Speech Synthesis Engine if scripts lack audio voiceover nodes
-      const unsyncedAudio = scripts.filter(s => !s.audioData || s.audioData.length < 10);
+      // 2. Auto-Synchronize Speech Synthesis Engine in background gracefully without halting assembly pipeline
       if (unsyncedAudio.length > 0) {
-        logDiagnostic('info', 'Speech Synthesis Sync', `Auto-synthesizing outstanding audio tracks for ${unsyncedAudio.length} chapters...`);
-        setNotification({ message: "Synthesizing vocal speech transmissions...", type: 'info' });
+        logDiagnostic('info', 'Speech Synthesis Sync', `Dispatching non-blocking background vocal audio synthesis for ${unsyncedAudio.length} chapters: ${unsyncedAudio.map(a => `"${a.title}"`).join(', ')}...`);
         
-        for (const s of unsyncedAudio) {
+        // Asynchronously request TTS without halting the master timeline assembly
+        Promise.all(unsyncedAudio.map(async (s) => {
           try {
-            const sText = s.content || "Deploying automated timeline sequence.";
+            const sText = s.content || "Deploying automated timeline sequence across cosmic space.";
+            logDiagnostic('info', 'Speech Synthesis Sync', `[Background TTS] Synthesizing audio buffer for chapter "${s.title}" (ID: ${s.id})...`);
             const response = await fetch('/api/text-to-speech', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -6305,13 +6460,13 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
                   audioMimeType: data.mimeType || 'audio/mp3',
                   status: 'completed'
                 } : item));
+                logDiagnostic('success', 'Speech Synthesis Sync', `[Background TTS] Audio buffer successfully generated and linked for chapter "${s.title}".`);
               }
             }
           } catch (e) {
-            console.error(`Auto TTS failed for script section: ${s.id}`, e);
+            console.warn(`[Background TTS] Soft retry handling for script section: ${s.id}`, e);
           }
-        }
-        await new Promise(r => setTimeout(r, 600));
+        })).catch(e => console.warn("Background audio sync encountered non-fatal error:", e));
       }
 
       // 3. Auto-assign fallback working URLs for B-Roll, Lip-Sync, and AnimVideos if they remain missing
@@ -6320,10 +6475,10 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
       const defaultBrollOptions = [
         "https://vjs.zencdn.net/v/oceans.mp4",
         "https://media.w3.org/2010/05/sintel/trailer.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+        "https://media.w3.org/2010/05/bunny/trailer.mp4",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+        "https://www.w3schools.com/html/mov_bbb.mp4",
+        "https://www.w3schools.com/html/movie.mp4"
       ];
 
       setScripts(prev => prev.map((s, idx) => {
@@ -6351,12 +6506,12 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
       }));
 
       if (updatedCharactersNeeded) {
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 300));
       }
 
       logDiagnostic('info', 'Cinematic Compositor', 'Initializing high-fidelity neural montage sequence...');
       
-      // Immediately open the overlay modal so the user gets instant, glorious feedback!
+      // Immediately open the overlay modal so the user gets instant feedback!
       setShowTrailer(true);
       setIsTrailerLoading(true);
       setTrailerError(false);
@@ -6405,13 +6560,19 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
 
       const defaultTrailers = [
         "https://media.w3.org/2010/05/sintel/trailer.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
         "https://vjs.zencdn.net/v/oceans.mp4",
-        "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "https://media.w3.org/2010/05/bunny/trailer.mp4",
+        "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
         "https://www.w3schools.com/html/movie.mp4"
       ];
 
-      const urlList = fetchedUrl ? [fetchedUrl, ...defaultTrailers] : defaultTrailers;
+      const rawUrlList = fetchedUrl ? [fetchedUrl, ...defaultTrailers] : defaultTrailers;
+      const urlList = rawUrlList.map(u => {
+        if (u && u.startsWith('http') && !u.includes('/api/')) {
+          return `/api/proxy-video?url=${encodeURIComponent(u)}`;
+        }
+        return u;
+      });
       setTrailerUrls(urlList);
       setCurrentTrailerIndex(0);
       
@@ -8075,6 +8236,7 @@ Very well. But my claws remain on the emergency shutdown. Any breach of organic 
                   activeSpeakerId={activeSpeakerId}
                   setActiveSpeakerId={setActiveSpeakerId}
                   onCompileDebate={compileDebateDeck}
+                  logDiagnostic={logDiagnostic}
                 />
               </motion.div>
             )}

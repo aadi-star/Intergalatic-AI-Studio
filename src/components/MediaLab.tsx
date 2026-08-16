@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { formatAudioDataUri } from '../App';
 import { 
   Sparkles, 
   Video, 
@@ -613,14 +614,14 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme, onA
       if (ttsResponse.ok) {
         const ttsData = await ttsResponse.json();
         if (ttsData.audioData) {
-          const audioUrl = `data:audio/wav;base64,${ttsData.audioData}`;
+          const audioUrl = formatAudioDataUri(ttsData.audioData, ttsData.mimeType || 'audio/wav');
           setVoiceChatHistory(prev => [...prev, { role: 'assistant', text: reply, audioUrl }]);
           
           if (!voiceMuted) {
             const audioObj = new Audio(audioUrl);
             audioPlaybackRef.current = audioObj;
-            audioObj.play();
-            audioObj.onended = () => {
+            
+            const handleEnded = () => {
               if (isVoiceActive) {
                 setVoiceStatus('listening');
                 setVoiceTranscript('Listening for communications...');
@@ -630,6 +631,13 @@ export const MediaLab: React.FC<MediaLabProps> = ({ characters, activeTheme, onA
                 } catch (_) {}
               }
             };
+            
+            audioObj.onended = handleEnded;
+            audioObj.onerror = handleEnded;
+            audioObj.play().catch(e => {
+              console.warn("MediaLab audio play notice:", e);
+              handleEnded();
+            });
           } else {
             setTimeout(() => {
               if (isVoiceActive) {
